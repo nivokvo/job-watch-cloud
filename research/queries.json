@@ -1,0 +1,38 @@
+[
+ {
+  "params": "area=16&employer_id=11057529&order_by=publication_time",
+  "why": "Data Light: главный источник вакансий на 7-8 (разметка, проверка описаний картинок и видео, сбор датасетов, задачи по математике). Проекты выходят пачками раз в 1-2 недели и набирают 30-130 откликов в сутки. Карточки «на местности» и «телефонных опросов» отсекать стоп-словами по названию."
+ },
+ {
+  "params": "area=16&employer_id=2731472&order_by=publication_time",
+  "why": "«Ритейл Мониторинг» (SPECSERVICE) из той же группы, что и 5224800 «Спецсервис персонал». На мерчендайзерских маршрутах встречается «аудит аптек», эталон, скорее всего, отсюда. Поток почти нулевой, держать ради редкого «аудитора»."
+ },
+ {
+  "params": "area=16&work_format=REMOTE&search_field=name&text=%D0%BF%D1%80%D0%BE%D0%B2%D0%B5%D1%80%D0%BA%D0%B0+OR+%D1%81%D0%B2%D0%B5%D1%80%D0%BA%D0%B0+OR+%D0%BC%D0%BE%D0%B4%D0%B5%D1%80%D0%B0%D1%86%D0%B8%D1%8F+OR+%D0%BC%D0%BE%D0%B4%D0%B5%D1%80%D0%B0%D1%82%D0%BE%D1%80+OR+%D0%B2%D0%B5%D1%80%D0%B8%D1%84%D0%B8%D0%BA%D0%B0%D1%86%D0%B8%D1%8F+OR+%D1%80%D0%B0%D0%B7%D0%BC%D0%B5%D1%82%D0%BA%D0%B0+OR+%D0%B2%D0%B0%D0%BB%D0%B8%D0%B4%D0%B0%D1%86%D0%B8%D1%8F+OR+%D0%BE%D1%86%D0%B8%D1%84%D1%80%D0%BE%D0%B2%D0%BA%D0%B0+OR+%D0%B2%D0%B2%D0%BE%D0%B4+OR+%D0%B0%D1%81%D0%B5%D1%81%D1%81%D0%BE%D1%80+OR+%D0%B4%D0%B0%D1%82%D0%B0%D1%81%D0%B5%D1%82+OR+AI+OR+%D0%98%D0%98+OR+LLM&order_by=publication_time",
+  "why": "Удалёнка по названию: проверка, сверка, разметка, данные для ИИ. Около 30 активных, из них 6-8 на 7+. В этом классе лучший сигнал на шум."
+ },
+ {
+  "params": "area=16&work_format=REMOTE&search_field=name&text=%D0%BA%D0%B0%D1%80%D1%82%D0%BE%D1%87%D0%BA%D0%B8+OR+%D0%BD%D0%B0%D0%BF%D0%BE%D0%BB%D0%BD%D0%B5%D0%BD%D0%B8%D0%B5+OR+%D0%BA%D0%B0%D1%82%D0%B0%D0%BB%D0%BE%D0%B3+OR+%D0%BA%D0%BE%D0%BD%D1%82%D0%B5%D0%BD%D1%82-%D0%BC%D0%B5%D0%BD%D0%B5%D0%B4%D0%B6%D0%B5%D1%80+OR+%D0%BC%D0%B0%D1%80%D0%BA%D0%B5%D1%82%D0%BF%D0%BB%D0%B5%D0%B9%D1%81+OR+Wildberries+OR+Ozon&experience=noExperience&order_by=publication_time",
+  "why": "Карточки, каталог, маркетплейсы без опыта, удалённо (стажёры и ассистенты). С опытом 1-3 года такие вакансии в основном 5-6, поэтому фильтр noExperience."
+ },
+ {
+  "params": "area=16&work_format=REMOTE&experience=noExperience&order_by=publication_time",
+  "why": "Вся удалёнка без опыта по Беларуси: около 220 активных, примерно 10-30 новых в будний день. Сеть для «вау» с неожиданными названиями (ORM-аналитик, стажёр маркетплейса). Шум отсекать стоп-списком по названию в Worker, а не через excluded_text."
+ },
+ {
+  "params": "area=16&work_format=REMOTE&employment_form=PROJECT&employment_form=SIDE_JOB&employment_form=PART&order_by=publication_time",
+  "why": "Удалённая частичная, проектная занятость или подработка. Сейчас PART ищется без REMOTE и только по Минску, отсюда офлайн-шум. Проектные задачи Data Light и разовые работы с таблицами и CRM попадают сюда."
+ },
+ {
+  "params": "area=16&text=%22%D0%BC%D0%B0%D1%82%D0%B5%D0%BC%D0%B0%D1%82%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D1%85+%D0%B7%D0%B0%D0%B4%D0%B0%D1%87%22+OR+%22%D0%B0%D0%B2%D1%82%D0%BE%D1%80+%D0%B7%D0%B0%D0%B4%D0%B0%D1%87%22+OR+LaTeX+OR+%22%D0%B7%D0%B0%D0%B4%D0%B0%D1%87%D0%B8+%D0%BF%D0%BE+%D0%BC%D0%B0%D1%82%D0%B5%D0%BC%D0%B0%D1%82%D0%B8%D0%BA%D0%B5%22&order_by=publication_time",
+  "why": "Профильные задачи для студента мехмата: авторы задач и решений для обучения LLM, удалённо, оплата за результат (по rubric 8)."
+ },
+ {
+  "params": "area=16&search_field=name&text=%22%D0%B0%D1%83%D0%B4%D0%B8%D1%82%D0%BE%D1%80+%D0%B0%D0%BF%D1%82%D0%B5%D0%BA%22+OR+%22%D0%B0%D1%83%D0%B4%D0%B8%D1%82+%D0%B0%D0%BF%D1%82%D0%B5%D0%BA%22+OR+%22%D0%B0%D1%83%D0%B4%D0%B8%D1%82%D0%BE%D1%80+%D1%81%D0%B5%D1%82%D0%B8%22+OR+%22%D0%BC%D0%BE%D0%BD%D0%B8%D1%82%D0%BE%D1%80%D0%B8%D0%BD%D0%B3+%D1%86%D0%B5%D0%BD%22+OR+%22%D0%BC%D0%BE%D0%BD%D0%B8%D1%82%D0%BE%D1%80%D0%B8%D0%BD%D0%B3+%D0%BD%D0%B0%D0%BB%D0%B8%D1%87%D0%B8%D1%8F%22+OR+%22%D1%83%D1%87%D0%B5%D1%82+%D0%BE%D1%81%D1%82%D0%B0%D1%82%D0%BA%D0%BE%D0%B2%22+OR+%22%D0%BF%D1%80%D0%BE%D0%B2%D0%B5%D1%80%D0%BA%D0%B0+%D0%B2%D1%8B%D0%BA%D0%BB%D0%B0%D0%B4%D0%BA%D0%B8%22&order_by=publication_time",
+  "why": "Замена текущему текстовому поиску: голое «аудитор» в тексте даёт около 280 финансовых аудиторов, «учет остатков» в тексте около 300 вакансий склада. Поиск по названию с фразами узкий и точный."
+ },
+ {
+  "params": "area=16&search_field=name&text=ORM+OR+SERM+OR+%D1%82%D0%BE%D0%BD%D0%B0%D0%BB%D1%8C%D0%BD%D0%BE%D1%81%D1%82%D1%8C+OR+%D1%83%D0%BF%D0%BE%D0%BC%D0%B8%D0%BD%D0%B0%D0%BD%D0%B8%D0%B9+OR+%D1%80%D0%B5%D0%BF%D1%83%D1%82%D0%B0%D1%86%D0%B8%D0%B8&order_by=publication_time",
+  "why": "Классификация текстов под названиями ORM/SERM-аналитика (пример: Fistashki, 7). Только по названию, иначе ORM ловит Python-разработчиков."
+ }
+]
