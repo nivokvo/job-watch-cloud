@@ -1,0 +1,57 @@
+[
+ {
+  "params": "area=16&area=113&area=40&area=97&area=28&area=9&area=48&area=1001&employer_id=5298438&order_by=publication_time&mixing_similar_queries=false",
+  "why": "Home office: «Специалист отдела контроля качества», проверка работы продавцов/кассиров по аудио и видео + внесение данных, частичная занятость, «из любой точки мира». В RU-версиях (area=113) нужен только русский. Лучшее, что нашлось; одна и та же вакансия перевыкладывается по городам, дедуп по name.",
+  "per_week": 9
+ },
+ {
+  "params": "area=40&area=97&area=28&area=9&area=48&area=1001&work_format=REMOTE&order_by=publication_time&mixing_similar_queries=false&text=%D1%80%D0%B0%D0%B7%D0%BC%D0%B5%D1%82%D0%BA%D0%B0+OR+%D1%80%D0%B0%D0%B7%D0%BC%D0%B5%D1%82%D1%87%D0%B8%D0%BA+OR+%D0%B0%D1%81%D0%B5%D1%81%D1%81%D0%BE%D1%80+OR+%D0%B0%D1%81%D1%81%D0%B5%D1%81%D0%BE%D1%80+OR+%22%D0%B2%D0%B2%D0%BE%D0%B4+%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85%22+OR+%22%D0%BE%D0%BF%D0%B5%D1%80%D0%B0%D1%82%D0%BE%D1%80+%D0%9F%D0%9A%22+OR+%22%D0%BE%D0%BF%D0%B5%D1%80%D0%B0%D1%82%D0%BE%D1%80+%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85%22+OR+%D0%B2%D0%B5%D1%80%D0%B8%D1%84%D0%B8%D0%BA%D0%B0%D1%82%D0%BE%D1%80+OR+%22%D0%BA%D0%B0%D1%80%D1%82%D0%BE%D1%87%D0%BA%D0%B8+%D1%82%D0%BE%D0%B2%D0%B0%D1%80%D0%BE%D0%B2%22+OR+%22%D0%BA%D0%BE%D0%BD%D1%82%D0%B5%D0%BD%D1%82-%D0%BC%D0%B5%D0%BD%D0%B5%D0%B4%D0%B6%D0%B5%D1%80%22+OR+%22%D0%BA%D0%BE%D0%BD%D1%82%D0%B5%D0%BD%D1%82+%D0%BC%D0%B5%D0%BD%D0%B5%D0%B4%D0%B6%D0%B5%D1%80%22+OR+%D0%BD%D0%B0%D0%BF%D0%BE%D0%BB%D0%BD%D0%B5%D0%BD%D0%B8%D0%B5+OR+%D0%BC%D0%BE%D0%B4%D0%B5%D1%80%D0%B0%D1%82%D0%BE%D1%80+OR+%D0%BC%D0%B0%D1%80%D0%BA%D0%B5%D1%82%D0%BF%D0%BB%D0%B5%D0%B9%D1%81+OR+%D0%BC%D0%B0%D1%80%D0%BA%D0%B5%D1%82%D0%BF%D0%BB%D0%B5%D0%B9%D1%81%D0%BE%D0%B2+OR+Kaspi+OR+Uzum+OR+%22%D0%BC%D0%BE%D0%BD%D0%B8%D1%82%D0%BE%D1%80%D0%B8%D0%BD%D0%B3+%D1%86%D0%B5%D0%BD%22+OR+%22%D0%BA%D0%BE%D0%BD%D1%82%D1%80%D0%BE%D0%BB%D1%8C+%D0%BA%D0%B0%D1%87%D0%B5%D1%81%D1%82%D0%B2%D0%B0%22+OR+%22%D0%BA%D0%BE%D0%BD%D1%82%D1%80%D0%BE%D0%BB%D1%8F+%D0%BA%D0%B0%D1%87%D0%B5%D1%81%D1%82%D0%B2%D0%B0%22&search_field=name",
+  "why": "Один сводный запрос по названию на все страны СНГ кроме РФ/РБ. Заменяет 13 отдельных запросов; ~10% выдачи по делу, остальное отсекает стоп-список.",
+  "per_week": 48
+ },
+ {
+  "params": "area=40&area=97&area=28&area=9&area=48&area=1001&work_format=REMOTE&order_by=publication_time&mixing_similar_queries=false&text=%D1%80%D0%B0%D0%B7%D0%BC%D0%B5%D1%82%D0%BA%D0%B0+OR+%D1%80%D0%B0%D0%B7%D0%BC%D0%B5%D1%82%D1%87%D0%B8%D0%BA+OR+%D0%B0%D1%81%D0%B5%D1%81%D1%81%D0%BE%D1%80+OR+%22%D1%81%D0%B1%D0%BE%D1%80+%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85%22+OR+%22%D0%B2%D0%B2%D0%BE%D0%B4+%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85%22+OR+%22%D0%BE%D0%BF%D0%B5%D1%80%D0%B0%D1%82%D0%BE%D1%80+%D0%9F%D0%9A%22+OR+%22%D0%BE%D0%BF%D0%B5%D1%80%D0%B0%D1%82%D0%BE%D1%80+%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85%22+OR+%D0%B2%D0%B5%D1%80%D0%B8%D1%84%D0%B8%D0%BA%D0%B0%D1%82%D0%BE%D1%80",
+  "why": "То же по описанию (разметка, ввод данных): ловит DATA LABELING и похожих, но много мусора про «сбор данных» в продажах.",
+  "per_week": 57
+ },
+ {
+  "params": "area=40&area=97&area=28&area=9&area=48&area=1001&area=113&work_format=REMOTE&order_by=publication_time&mixing_similar_queries=false&text=%D0%B2%D0%B5%D1%80%D0%B8%D1%84%D0%B8%D0%BA%D0%B0%D1%82%D0%BE%D1%80+OR+%22%D0%BF%D1%80%D0%BE%D0%B2%D0%B5%D1%80%D0%BA%D0%B0+%D0%B0%D0%BD%D0%BA%D0%B5%D1%82%22+OR+%22%D0%BF%D1%80%D0%BE%D0%B2%D0%B5%D1%80%D0%BA%D0%B0+%D0%BE%D1%82%D1%87%D0%B5%D1%82%D0%BE%D0%B2%22+OR+%22%D0%BF%D1%80%D0%BE%D0%B2%D0%B5%D1%80%D0%BA%D0%B5+%D0%BE%D1%82%D1%87%D0%B5%D1%82%D0%BE%D0%B2%22+OR+%22%D0%BA%D0%BE%D0%BD%D1%82%D1%80%D0%BE%D0%BB%D1%8C+%D0%BA%D0%B0%D1%87%D0%B5%D1%81%D1%82%D0%B2%D0%B0%22+OR+%22%D0%BA%D0%BE%D0%BD%D1%82%D1%80%D0%BE%D0%BB%D1%8F+%D0%BA%D0%B0%D1%87%D0%B5%D1%81%D1%82%D0%B2%D0%B0%22+OR+%D0%BF%D1%80%D0%BE%D1%81%D0%BB%D1%83%D1%88%D0%B8%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5&search_field=name",
+  "why": "Проверка анкет/отчётов, контроль качества по записям: Home office, Key Consulting, «оператор видео-контроля качества». Нужен стоп-список: андеррайтер, риск, инженер, колл-центр.",
+  "per_week": 41
+ },
+ {
+  "params": "area=40&area=97&area=28&area=9&area=48&area=1001&work_format=REMOTE&order_by=publication_time&mixing_similar_queries=false&employment_form=PART&text=%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85+OR+%D1%82%D0%B0%D0%B1%D0%BB%D0%B8%D1%86+OR+Excel+OR+%D0%BA%D0%B0%D1%80%D1%82%D0%BE%D1%87+OR+%D1%80%D0%B0%D0%B7%D0%BC%D0%B5%D1%82%D0%BA+OR+%D0%BC%D0%BE%D0%B4%D0%B5%D1%80%D0%B0%D1%86+OR+%D0%BC%D0%BE%D0%BD%D0%B8%D1%82%D0%BE%D1%80%D0%B8%D0%BD%D0%B3",
+  "why": "Частичная занятость в СНГ с нашими словами: Open Brain (стажёр, тендеры, таблицы), Home office.",
+  "per_week": 52
+ },
+ {
+  "params": "area=16&area=113&area=40&area=97&area=28&area=9&area=48&area=1001&employer_id=11671504&order_by=publication_time&mixing_similar_queries=false",
+  "why": "DATA LABELING (KZ): разметчик, сравнение товаров маркетплейсов, свободный график, сдельно, русский ок. Сейчас 1 вакансия, следить за новыми.",
+  "per_week": 1
+ },
+ {
+  "params": "area=16&area=113&area=40&area=97&area=28&area=9&area=48&area=1001&employer_id=3555626&order_by=publication_time&mixing_similar_queries=false",
+  "why": "Key Consulting (UZ, mystery shopping): верификатор анкет по чек-листу, сдельно, свободный график. Сейчас нужен узбекский; ждать русскоязычных проектов.",
+  "per_week": 1
+ },
+ {
+  "params": "area=16&area=113&area=40&area=97&area=28&area=9&area=48&area=1001&employer_id=12684058&order_by=publication_time&mixing_similar_queries=false",
+  "why": "Open Brain (KZ, Tender AI): стажёр-помощник, проверка выдачи тендеров, таблицы, частичная занятость, студентов берут.",
+  "per_week": 1
+ },
+ {
+  "params": "area=40&area=97&area=28&area=9&area=48&area=1001&work_format=REMOTE&order_by=publication_time&mixing_similar_queries=false&text=%22%D0%BA%D0%B0%D1%80%D1%82%D0%BE%D1%87%D0%BA%D0%B8+%D1%82%D0%BE%D0%B2%D0%B0%D1%80%D0%BE%D0%B2%22+OR+%22%D0%BA%D0%BE%D0%BD%D1%82%D0%B5%D0%BD%D1%82-%D0%BC%D0%B5%D0%BD%D0%B5%D0%B4%D0%B6%D0%B5%D1%80%22+OR+%22%D0%BA%D0%BE%D0%BD%D1%82%D0%B5%D0%BD%D1%82+%D0%BC%D0%B5%D0%BD%D0%B5%D0%B4%D0%B6%D0%B5%D1%80%22+OR+%22%D0%BD%D0%B0%D0%BF%D0%BE%D0%BB%D0%BD%D0%B5%D0%BD%D0%B8%D0%B5+%D1%81%D0%B0%D0%B9%D1%82%D0%B0%22+OR+%22%D0%BD%D0%B0%D0%BF%D0%BE%D0%BB%D0%BD%D0%B5%D0%BD%D0%B8%D0%B5+%D0%BA%D0%B0%D1%80%D1%82%D0%BE%D1%87%D0%B5%D0%BA%22&search_field=name",
+  "why": "Контент и карточки по названию. Поток маленький, чаще офис в Алматы или SMM, но иногда удалённое наполнение.",
+  "per_week": 10
+ },
+ {
+  "params": "area=40&area=97&area=28&area=9&area=48&area=1001&work_format=REMOTE&order_by=publication_time&mixing_similar_queries=false&text=%D0%BC%D0%B0%D1%80%D0%BA%D0%B5%D1%82%D0%BF%D0%BB%D0%B5%D0%B9%D1%81+OR+%D0%BC%D0%B0%D1%80%D0%BA%D0%B5%D1%82%D0%BF%D0%BB%D0%B5%D0%B9%D1%81%D0%BE%D0%B2+OR+Kaspi+OR+%D0%9A%D0%B0%D1%81%D0%BF%D0%B8+OR+Uzum+OR+Wildberries+OR+Ozon&search_field=name",
+  "why": "Маркетплейсы Kaspi/Uzum/WB/Ozon. В основном «менеджер МП с опытом» (4-5 баллов), годится как запасной.",
+  "per_week": 10
+ },
+ {
+  "params": "area=16&area=113&area=40&area=97&area=28&area=9&area=48&area=1001&work_format=REMOTE&order_by=publication_time&mixing_similar_queries=false&text=%22data+entry%22+OR+annotator+OR+%22data+annotation%22+OR+%22content+moderator%22+OR+%22AI+trainer%22+OR+rater",
+  "why": "НЕ ВКЛЮЧАТЬ. Английские запросы: на hh почти нет вакансий нашего типа с английским, выдача забита «менеджерами онлайн-заявок» из РФ.",
+  "per_week": 44
+ }
+]
