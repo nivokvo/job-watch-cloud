@@ -1,0 +1,47 @@
+name: cloud-apply
+# Облачный Opus + автоотклик, пока мак спит. Запускает Cloudflare-воркер (workflow_dispatch), когда нашёл вакансию на 5+.
+on:
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: "Сухой прогон: оценить и заполнить отклик, но не отправлять"
+        type: boolean
+        default: false
+      vid:
+        description: "Проверка: id одной вакансии (оценить и заполнить отклик без отправки)"
+        type: string
+        default: ""
+concurrency:
+  group: cloud-apply
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        run: |
+          pip install -q patchright
+          python -m patchright install --with-deps chromium > /dev/null
+          npm install -g -s @anthropic-ai/claude-code
+      - name: Score and apply
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ROUTINE_KEY: ${{ secrets.ROUTINE_KEY }}
+          RABOTA_STATE_B64: ${{ secrets.RABOTA_STATE }}
+          VID: ${{ inputs.vid }}
+        run: |
+          umask 077
+          export RABOTA_STATE_FILE="$RUNNER_TEMP/rabota_state.json"
+          echo "$RABOTA_STATE_B64" | base64 -d > "$RABOTA_STATE_FILE"
+          python cloud_apply/run.py ${{ inputs.dry && '--dry' || '' }} ${VID:+--vid=$VID}
+          rm -f "$RABOTA_STATE_FILE"
