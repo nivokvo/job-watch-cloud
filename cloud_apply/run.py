@@ -14,6 +14,7 @@ CLOUD = "https://rabota-watch.7vy7m8srtf.workers.dev"
 KEY = os.environ["ROUTINE_KEY"]
 MIN_SCORE = 8
 CLOUD_PER_DAY = 3
+TOTAL_PER_DAY = 10  # как APPLY_PER_DAY на маке
 DRY = "--dry" in sys.argv or any(a.startswith("--vid=") for a in sys.argv)
 RESUMES = ["Специалист по обработке данных и автоматизации", "Оператор данных, специалист по учёту и сверке данных",
            "Контент-менеджер", "Ассистент менеджера маркетплейсов (Wildberries, Ozon)", "Начинающий специалист"]
@@ -97,7 +98,10 @@ def main():
     if not queue:
         return
     scores = score(queue)
-    left = CLOUD_PER_DAY - int(curl("/cloudstat").get("applied_today", 0))
+    st = curl("/cloudstat")
+    cloud, mac = int(st.get("applied_today", 0)), int(st.get("mac_today", 0))
+    # своих не больше CLOUD_PER_DAY, а вместе с маком не больше общего лимита на день
+    left = min(CLOUD_PER_DAY - cloud, TOTAL_PER_DAY - cloud - mac)
     results = []
     for v in queue:
         sc = scores.get(v["id"])
