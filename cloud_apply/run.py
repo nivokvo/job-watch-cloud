@@ -1,8 +1,8 @@
 """Облачный Opus для сторожа rabota.by: запускается из GitHub Actions, пока мак спит.
 
 1. Забирает из Cloudflare-воркера вакансии, которые облако нашло и Gemini оценил на 5+.
-2. Opus (Claude Code с токеном подписки) оценивает их по rubric.md и пишет письмо для 8+.
-3. Для 8+ откликается через скрытый браузер с сессией rabota.by (не больше CLOUD_PER_DAY в день).
+2. Opus (Claude Code с токеном подписки) оценивает их по rubric.md и пишет письмо для 7+.
+3. Для 7+ откликается через скрытый браузер с сессией rabota.by (не больше CLOUD_PER_DAY в день).
    Без письма не отправляет никогда, эти проверки в apply.py.
 4. Отдаёт вердикт воркеру: тот правит карточку в Telegram, а мак после пробуждения не откликается повторно.
 """
@@ -12,7 +12,7 @@ DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(DIR)
 CLOUD = "https://rabota-watch.7vy7m8srtf.workers.dev"
 KEY = os.environ["ROUTINE_KEY"]
-MIN_SCORE = 8
+MIN_SCORE = 7
 CLOUD_PER_DAY = 3
 TOTAL_PER_DAY = 10  # как APPLY_PER_DAY на маке
 DRY = "--dry" in sys.argv or any(a.startswith("--vid=") for a in sys.argv)
@@ -22,7 +22,7 @@ RESUMES = ["Специалист по сбору и обработке данн�
 FORMAT = """
 
 Верни только JSON-массив без markdown: [{"id": число, "score": 0-10, "why": "до 15 слов почему", "how": "до 20 слов как автоматизировать", "you": "до 15 слов что останется руками"}]
-Только для вакансий с оценкой 8+ добавь в объект поля "resume" и "letter" по правилам письма, чтобы отклик ушёл сразу."""
+Только для вакансий с оценкой 7+ добавь в объект поля "resume" и "letter" по правилам письма, чтобы отклик ушёл сразу."""
 
 
 def curl(path, body=None):
