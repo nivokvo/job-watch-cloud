@@ -13,7 +13,8 @@ ROOT = os.path.dirname(DIR)
 CLOUD = "https://rabota-watch.7vy7m8srtf.workers.dev"
 KEY = os.environ["ROUTINE_KEY"]
 MIN_SCORE = 7
-CLOUD_PER_DAY = 3
+CLOUD_PER_DAY = 7  # с 12.10: мак днём часто закрыт (пары), облако должно успевать за будним потоком
+RESERVE_8 = 2  # последние слоты дня держим только для 8+, чтобы семёрки не съели место хорошей вакансии
 TOTAL_PER_DAY = 10  # как APPLY_PER_DAY на маке
 DRY = "--dry" in sys.argv or any(a.startswith("--vid=") for a in sys.argv)
 RESUMES = ["Специалист по сбору и обработке данных (Python, Excel), удалённо", "Оператор ПК, оператор базы данных (удалённо)",
@@ -104,6 +105,7 @@ def main():
     # своих не больше CLOUD_PER_DAY, а вместе с маком не больше общего лимита на день
     left = min(CLOUD_PER_DAY - cloud, TOTAL_PER_DAY - cloud - mac)
     results = []
+    queue.sort(key=lambda v: -((scores.get(v["id"]) or {}).get("score") or 0))  # сначала лучшие
     for v in queue:
         sc = scores.get(v["id"])
         if not sc:
@@ -112,6 +114,8 @@ def main():
         if (sc.get("score") or 0) >= MIN_SCORE and sc.get("letter"):
             if left <= 0:
                 res["apply_reason"] = "дневной лимит облачных откликов"
+            elif sc.get("score") < 8 and left <= RESERVE_8:
+                res["apply_reason"] = "последние слоты дня оставлены под 8+"
             else:
                 a = apply(v, sc)
                 print("отклик", v["id"], {k: a.get(k) for k in ("ok", "reason", "label", "letter_sent")})
