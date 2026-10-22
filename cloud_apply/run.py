@@ -37,7 +37,7 @@ def curl(path, body=None):
 
 def brief(v):
     return (f"id={v['id']} | {v['name']} | {v.get('company', '')} | зп: {v.get('sal') or 'не указана'} | опыт: {v.get('exp') or ''} "
-            f"| часы: {','.join(v.get('hours') or [])} | требования: {(v.get('req') or '')[:250]} "
+            f"| часы: {','.join(v.get('hours') or [])} | контактное лицо: {v.get('manager') or 'не указано'} | требования: {(v.get('req') or '')[:250]} "
             f"| обязанности: {(v.get('duty') or v.get('resp_text') or '')[:250]} | описание: {(v.get('desc') or '')[:1500]}")
 
 
@@ -79,8 +79,9 @@ def vacancy(vid):
         return re.sub(r"\s+", " ", h.unescape(re.sub("<[^>]+>", " ", m.group(1)))).strip() if m else ""
     m = re.search(r'data-qa="vacancy-description">(.*?)</div>\s*</div>', t, re.S)
     desc = re.sub(r"\s+", " ", h.unescape(re.sub("<[^>]+>", " ", m.group(1)))).strip() if m else ""
+    n = re.search(r'"employerManager":\s*\{[^{}]*?"firstName":\s*"([^"]+)"', h.unescape(t))
     return {"id": int(vid), "name": qa("vacancy-title"), "company": qa("vacancy-company-name"), "sal": qa("vacancy-salary"),
-            "exp": qa("vacancy-experience"), "desc": desc[:2500]}
+            "exp": qa("vacancy-experience"), "desc": desc[:2500], "manager": n.group(1).strip() if n else None}
 
 
 def main():
@@ -99,6 +100,12 @@ def main():
     print("в очереди:", len(queue))
     if not queue:
         return
+    for v in queue:  # имя контактного лица для обращения в письме
+        if not v.get("manager"):
+            try:
+                v["manager"] = vacancy(v["id"]).get("manager")
+            except Exception:
+                pass
     scores = score(queue)
     st = curl("/cloudstat")
     cloud, mac = int(st.get("applied_today", 0)), int(st.get("mac_today", 0))
