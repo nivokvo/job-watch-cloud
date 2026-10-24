@@ -6,7 +6,7 @@
    Без письма не отправляет никогда, эти проверки в apply.py.
 4. Отдаёт вердикт воркеру: тот правит карточку в Telegram, а мак после пробуждения не откликается повторно.
 """
-import json, os, re, subprocess, sys, tempfile
+import json, os, re, subprocess, sys, tempfile, time
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(DIR)
@@ -15,6 +15,7 @@ KEY = os.environ["ROUTINE_KEY"]
 MIN_SCORE = 7
 CLOUD_PER_DAY = 7  # с 12.10: мак днём часто закрыт (пары), облако должно успевать за будним потоком
 RESERVE_8 = 2  # последние слоты дня держим только для 8+, чтобы семёрки не съели место хорошей вакансии
+GAP = 180  # секунд между откликами подряд
 TOTAL_PER_DAY = 20  # как APPLY_PER_DAY на маке
 DRY = "--dry" in sys.argv or any(a.startswith("--vid=") for a in sys.argv)
 RESUMES = ["Специалист по сбору и обработке данных (Python, Excel), удалённо", "Оператор ПК, оператор базы данных (удалённо)",
@@ -111,7 +112,7 @@ def main():
     cloud, mac = int(st.get("applied_today", 0)), int(st.get("mac_today", 0))
     # своих не больше CLOUD_PER_DAY, а вместе с маком не больше общего лимита на день
     left = min(CLOUD_PER_DAY - cloud, TOTAL_PER_DAY - cloud - mac)
-    results = []
+    results, last_apply = [], 0
     queue.sort(key=lambda v: -((scores.get(v["id"]) or {}).get("score") or 0))  # сначала лучшие
     for v in queue:
         sc = scores.get(v["id"])
@@ -124,6 +125,10 @@ def main():
             elif sc.get("score") < 8 and left <= RESERVE_8:
                 res["apply_reason"] = "последние слоты дня оставлены под 8+"
             else:
+                # подряд откликаться нельзя: 7 откликов за 2 минуты 23.10 дали капчу. Первый идёт сразу, следующие с паузой
+                if last_apply:
+                    time.sleep(max(0, GAP - (time.time() - last_apply)))
+                last_apply = time.time()
                 a = apply(v, sc)
                 print("отклик", v["id"], {k: a.get(k) for k in ("ok", "reason", "label", "letter_sent")})
                 res["applied"] = bool(a.get("ok")) and not DRY
