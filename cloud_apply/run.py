@@ -6,6 +6,7 @@
    Без письма не отправляет никогда, эти проверки в apply.py.
 4. Отдаёт вердикт воркеру: тот правит карточку в Telegram, а мак после пробуждения не откликается повторно.
 """
+# Репозиторий публичный (с 29.10, ради бесплатных минут Actions): логи видят все, поэтому печатаем только id и цифры
 import json, os, re, subprocess, sys, tempfile, time
 
 DIR = os.path.dirname(os.path.abspath(__file__))
@@ -50,7 +51,7 @@ def score(vs):
                        input=text, capture_output=True, text=True, timeout=900)
     m = re.search(r"\[.*\]", r.stdout, re.S)
     if r.returncode or not m:
-        raise RuntimeError((r.stdout + r.stderr).strip()[:300])
+        raise RuntimeError(f"claude -p упал, код {r.returncode}")  # без вывода: логи публичные
     out = {int(x["id"]): x for x in json.loads(m.group(0), strict=False)}
     for x in out.values():
         if x.get("letter") and x.get("resume") not in RESUMES:
@@ -89,9 +90,9 @@ def main():
     vid = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--vid=")), None)
     if vid:  # проверка: оценить одну вакансию и заполнить отклик без отправки, что бы ни поставил Opus
         v = vacancy(vid)
-        print("вакансия:", v["name"], "|", v["company"], "| описание", len(v["desc"]), "знаков")
+        print("вакансия:", v["id"], "| описание", len(v["desc"]), "знаков")
         sc = score([v]).get(v["id"], {})
-        print("Opus:", sc.get("score"), sc.get("why"), "| резюме:", sc.get("resume"))
+        print("Opus:", sc.get("score"))
         if not sc.get("letter"):
             sc = {**sc, "letter": "Тестовое письмо для проверки облачного отклика, не отправляется.", "resume": sc.get("resume") or RESUMES[1]}
         a = apply(v, sc)
@@ -134,12 +135,13 @@ def main():
                 res["applied"] = bool(a.get("ok")) and not DRY
                 res["apply_reason"] = str(a.get("reason") or "")[:150]
                 left -= 1 if res["applied"] else 0
-        print(v["id"], sc.get("score"), v["name"])
+        print(v["id"], sc.get("score"))
         results.append(res)
     if DRY:
-        print("сухой прогон, вердикт не отправляю:", json.dumps(results, ensure_ascii=False)[:2000])
+        print("сухой прогон, вердикт не отправляю:", len(results), "вакансий")
         return
-    print("воркер:", curl("/verdict", results))
+    r = curl("/verdict", results)
+    print("воркер:", "ok" if r else "нет ответа")
 
 
 if __name__ == "__main__":
