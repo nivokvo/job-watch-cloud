@@ -14,6 +14,11 @@ ROOT = os.path.dirname(DIR)
 CLOUD = "https://rabota-watch.7vy7m8srtf.workers.dev"
 KEY = os.environ["ROUTINE_KEY"]
 MIN_SCORE = 7
+MIN_CORE = 5  # с 02.11, как на маке: 5-6 только по профилю, где реально зовут
+CORE = r"данн|информац|оператор|модератор|контент|карточ|маркетплейс|wildberries|ozon|каталог|ассистент|помощник"
+TEXTS = r"копирайт|рерайт|seo|редактор|статьи|автор текст"
+PAY_FLOOR = 30000  # RUR в месяц; зарплата не указана = проходит
+RATES = ((r"BYN|Br", 29), (r"USD|\$", 80), (r"EUR|€", 90), (r"KZT|₸", 0.15), (r"RUR|RUB|₽|руб", 1))
 CLOUD_PER_DAY = 7  # с 12.10: мак днём часто закрыт (пары), облако должно успевать за будним потоком
 RESERVE_8 = 2  # последние слоты дня держим только для 8+, чтобы семёрки не съели место хорошей вакансии
 GAP = 180  # секунд между откликами подряд
@@ -25,7 +30,7 @@ RESUMES = ["Специалист по обработке данных и авт�
 FORMAT = """
 
 Верни только JSON-массив без markdown: [{"id": число, "score": 0-10, "auto": 0-100, "why": "до 15 слов почему", "how": "до 20 слов как автоматизировать", "you": "до 15 слов что останется руками"}]
-Только для вакансий с оценкой 7+ добавь в объект поля "resume" и "letter" по правилам письма, чтобы отклик ушёл сразу."""
+Только для вакансий с оценкой 5+ добавь в объект поля "resume" и "letter" по правилам письма, чтобы отклик ушёл сразу."""
 
 
 def curl(path, body=None):
@@ -69,6 +74,20 @@ def apply(v, sc):
         return json.loads(lines[-1])
     except Exception:
         return {"ok": False, "reason": (r.stdout + r.stderr).strip()[-200:]}
+
+
+def pays(sal):
+    nums = [int(x) for x in re.findall(r"\d+", re.sub(r"[\s\u00a0\u202f]", "", sal or ""))]
+    rate = next((r for p, r in RATES if re.search(p, sal or "")), None)
+    return not nums or not rate or max(nums) * rate >= PAY_FLOOR
+
+
+def worth(v, sc):
+    s = sc.get("score") or 0
+    if not pays(v.get("sal")):
+        return False
+    return s >= MIN_SCORE or (s >= MIN_CORE and bool(re.search(CORE, v.get("name") or "", re.I)) and not re.search(TEXTS + "|дизайн", v.get("name") or "", re.I)
+                              and not re.search(r"посредник|реферал|запрет", sc.get("why") or "", re.I))
 
 
 def vacancy(vid):
@@ -119,8 +138,9 @@ def main():
         sc = scores.get(v["id"])
         if not sc:
             continue
-        res = {"id": v["id"], "score": sc.get("score"), "why": sc.get("why"), "resume": sc.get("resume"), "letter": sc.get("letter")}
-        if (sc.get("score") or 0) >= MIN_SCORE and sc.get("letter"):
+        good = worth(v, sc)
+        res = {"id": v["id"], "score": sc.get("score"), "why": sc.get("why"), "resume": sc.get("resume"), "letter": sc.get("letter"), "good": good}
+        if good and sc.get("letter"):
             if left <= 0:
                 res["apply_reason"] = "дневной лимит облачных откликов"
             elif sc.get("score") < 8 and left <= RESERVE_8:
