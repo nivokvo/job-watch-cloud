@@ -43,7 +43,7 @@ def curl(path, body=None):
 
 
 def brief(v):
-    return (f"id={v['id']} | {v['name']} | {v.get('company', '')} | зп: {v.get('sal') or 'не указана'} | опыт: {v.get('exp') or ''} "
+    return (f"id={v['id']} | {v['name']} | {v.get('company', '')} | город: {v.get('area') or '?'} | формат: {','.join(v.get('formats') or []) or 'не указан'} | зп: {v.get('sal') or 'не указана'} | опыт: {v.get('exp') or ''} "
             f"| часы: {','.join(v.get('hours') or [])} | контактное лицо: {v.get('manager') or 'не указано'} | требования: {(v.get('req') or '')[:250]} "
             f"| обязанности: {(v.get('duty') or v.get('resp_text') or '')[:250]} | описание: {(v.get('desc') or '')[:1500]}")
 
