@@ -226,7 +226,7 @@ def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "cloud":
         st = api("/chat/seen")
-        if st.get("mac_alive"):
+        if st.get("mac_alive") and os.environ.get("FORCE") != "true":
             return log("мак не спит, ответы делает он")
         jobs()
         r = run_apply("responses", timeout=240)
