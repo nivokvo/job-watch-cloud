@@ -1,0 +1,51 @@
+name: cloud-chats
+# Ответы работодателям, пока мак спит: читает чаты rabota.by, Opus пишет черновик, карточка с кнопками уходит в Telegram,
+# одобренное отправляется. Запускает воркер по кнопке в боте и крон раз в 20 минут. Если мак жив, сразу выходит.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/20 * * * *"
+concurrency:
+  group: cloud-chats
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mac alive?
+        id: mac
+        env:
+          ROUTINE_KEY: ${{ secrets.ROUTINE_KEY }}
+        run: |
+          a=$(curl -s -m 30 "https://rabota-watch.7vy7m8srtf.workers.dev/chat/seen?key=$ROUTINE_KEY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('mac_alive'))")
+          echo "alive=$a" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        if: steps.mac.outputs.alive != 'True'
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        if: steps.mac.outputs.alive != 'True'
+        with:
+          node-version: "22"
+      - name: Install
+        if: steps.mac.outputs.alive != 'True'
+        run: |
+          pip install -q patchright
+          python -m patchright install --with-deps chromium > /dev/null
+          npm install -g -s @anthropic-ai/claude-code
+      - name: Chats
+        if: steps.mac.outputs.alive != 'True'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ROUTINE_KEY: ${{ secrets.ROUTINE_KEY }}
+          RABOTA_STATE_B64: ${{ secrets.RABOTA_STATE }}
+        run: |
+          umask 077
+          export RABOTA_STATE_FILE="$RUNNER_TEMP/rabota_state.json"
+          echo "$RABOTA_STATE_B64" | base64 -d > "$RABOTA_STATE_FILE"
+          python cloud_apply/replier.py cloud
+          rm -f "$RABOTA_STATE_FILE"

@@ -5,6 +5,9 @@ check                              проверить, что вход ещё ж
 apply VACANCY_ID "РЕЗЮМЕ" LETTER   откликнуться выбранным резюме (часть названия) с письмом из файла LETTER
 probe VACANCY_ID                   открыть окно отклика и ничего не отправлять (отладка)
 responses                          состояние всех откликов (приглашения, отказы, новые сообщения)
+chat CHAT_ID                       переписка по отклику (последние 15 сообщений)
+say CHAT_ID FILE                   отправить в чат текст из FILE (только по просьбе Глеба) и дождаться ответа
+click CHAT_ID "КНОПКА"             нажать кнопку бота работодателя в чате (например «Да»)
 raise                              поднять в поиске все резюме, у которых кнопка уже доступна
 Печатает одну строку JSON с результатом.
 """
@@ -17,6 +20,17 @@ BASE = "https://rabota.by"
 
 
 def launch(pw, visible):
+    # профиль общий у сторожа, облачной синхронизации и ручных команд: если занят, ждём, а не падаем
+    for attempt in range(12):
+        try:
+            return _launch(pw, visible)
+        except Exception as e:
+            if "ProcessSingleton" not in str(e) and "SingletonLock" not in str(e) or attempt == 11:
+                raise
+            time.sleep(10)
+
+
+def _launch(pw, visible):
     # в облаке (GitHub Actions) вход берётся из файла сессии, выгруженного с мака
     state = os.environ.get("RABOTA_STATE_FILE")
     if state:
@@ -105,9 +119,9 @@ def choose_resume(page, title):
     return page.locator('[data-qa="resume-title"]').first.inner_text().strip() == title
 
 
-def apply(vid, resume, letter, dry=False):
+def apply(vid, resume, letter, dry=False, manual=False):
     with sync_playwright() as pw:
-        ctx = launch(pw, False)
+        ctx = launch(pw, manual)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             if not logged_in(ctx):
@@ -141,12 +155,33 @@ def apply(vid, resume, letter, dry=False):
                 return out(ok=False, reason="no_submit")
             if dry:
                 return out(ok=True, reason="dry_run", letter_chars=len(box.first.input_value()))
+            if manual:
+                # капча: всё заполнено, «Откликнуться» и капчу жмёт Глеб сам в открытом окне. Ждём до 15 минут
+                page.bring_to_front()
+                deadline = time.time() + 900
+                while time.time() < deadline:
+                    try:
+                        with page.expect_response(lambda r: "/applicant/vacancy_response/popup" in r.url
+                                                  and r.request.method == "POST", timeout=30000) as resp:
+                            pass
+                        if resp.value.json().get("success") == "true":
+                            return out(ok=True, reason="", label="manual", letter_sent=True)
+                    except Exception:
+                        if "Вы откликнулись" in page.inner_text("body"):
+                            return out(ok=True, reason="", label="manual", letter_sent=True)
+                return out(ok=False, reason="manual_timeout")
             with page.expect_response(lambda r: "/applicant/vacancy_response/popup" in r.url
                                       and r.request.method == "POST", timeout=20000) as resp:
                 submit.first.click()
             data = resp.value.json()
             label = data.get("response_label") or ""
-            out(ok=data.get("success") == "true", reason=str(data.get("error") or ""), label=label,
+            reason = str(data.get("error") or "")
+            if (data.get("hhcaptcha") or {}).get("isBot"):  # сайт заподозрил бота: капчу не обходим, отклик делает Глеб
+                reason = "captcha"
+            elif data.get("success") != "true" and not reason:  # пустой отказ сервера: часто вакансию уже сняли
+                page_html = ctx.request.get(f"{BASE}/vacancy/{vid}").text()
+                reason = "archived" if '"status":{"archived":true' in page_html else "unknown: " + json.dumps(data, ensure_ascii=False)[:250]
+            out(ok=data.get("success") == "true", reason=reason, label=label,
                 letter_sent="without-letter" not in label)
         except Exception as e:
             out(ok=False, reason=f"error: {e}"[:300])
@@ -175,7 +210,8 @@ def responses():
             out(ok=True, topics=[{"id": t["id"], "vacancy": t["vacancyId"], "name": names.get(t["vacancyId"], ("", ""))[0],
                                   "company": names.get(t["vacancyId"], ("", ""))[1], "state": t["lastState"],
                                   "new": t.get("hasNewMessages", False), "msgs": t.get("conversationMessagesCount", 0),
-                                  "chat": t.get("chatId")} for t in topics])
+                                  "chat": t.get("chatId"), "viewed": t.get("viewedByOpponent", False),
+                                  "created": t.get("creationTime", "")[:16]} for t in topics])
         finally:
             ctx.close()
 
@@ -207,6 +243,89 @@ def raise_resumes():
             ctx.close()
 
 
+def chat(chat_id):
+    """Переписка по отклику: последние сообщения, чьи они и текст."""
+    with sync_playwright() as pw:
+        ctx = launch(pw, False)
+        try:
+            r = ctx.request.get(f"https://chatik.rabota.by/chatik/api/chat_data?chatId={chat_id}&do_not_track_session_events=false")
+            c = r.json()["chat"]
+            me = str(c.get("currentParticipantId"))
+            msgs = [{"id": m["id"], "mine": str(m.get("participantId")) == me, "time": m.get("creationTime", "")[:16],
+                     "who": (m.get("participantDisplay") or {}).get("name", ""), "bot": (m.get("participantDisplay") or {}).get("isBot", False),
+                     "state": (m.get("workflowTransition") or {}).get("applicantState"), "text": m.get("text") or ""}
+                    for m in c["messages"]["items"]]
+            last = c["messages"]["items"][-1] if c["messages"]["items"] else {}
+            buttons = [b.get("text") for b in ((last.get("actions") or {}).get("text_buttons") or []) if b.get("text")]
+            out(ok=True, chat=chat_id, can_write=(c.get("writePossibility") or {}).get("name"), messages=msgs[-15:], buttons=buttons)
+        finally:
+            ctx.close()
+
+
+def say(chat_id, path, wait=True):
+    """Отправить сообщение в чат по отклику через окно чата и подождать ответ (ИИ-помощник отвечает за секунды)."""
+    text = open(path).read().strip()
+    with sync_playwright() as pw:
+        ctx = launch(pw, False)
+        try:
+            api = f"https://chatik.rabota.by/chatik/api/chat_data?chatId={chat_id}&do_not_track_session_events=false"
+            before = len(ctx.request.get(api).json()["chat"]["messages"]["items"])
+            page = ctx.new_page()
+            page.goto(f"{BASE}/chat/{chat_id}", wait_until="domcontentloaded")
+            box = page.locator('[data-qa="chatik-message-input"] textarea').first
+            box.wait_for(timeout=30000)
+            box.fill(text)
+            box.press("Enter")
+            for _ in range(30 if wait else 4):  # ждём своё сообщение и ответ собеседника (для напоминаний только своё)
+                page.wait_for_timeout(2000)
+                c = ctx.request.get(api).json()["chat"]
+                items = c["messages"]["items"]
+                me = str(c.get("currentParticipantId"))
+                if len(items) > before + 1 and str(items[-1].get("participantId")) != me or not wait and len(items) > before:
+                    break
+            new = [{"mine": str(m.get("participantId")) == me, "text": m.get("text") or ""} for m in items[before:]]
+            out(ok=any(m["mine"] for m in new), messages=new)
+        finally:
+            ctx.close()
+
+
+def click(chat_id, label):
+    """Нажать кнопку бота работодателя (анкета «Да/Нет» и т.п.) и убедиться, что ответ ушёл."""
+    with sync_playwright() as pw:
+        ctx = launch(pw, False)
+        try:
+            api = f"https://chatik.rabota.by/chatik/api/chat_data?chatId={chat_id}&do_not_track_session_events=false"
+            before = len(ctx.request.get(api).json()["chat"]["messages"]["items"])
+            page = ctx.new_page()
+            page.goto(f"{BASE}/chat/{chat_id}", wait_until="domcontentloaded")
+            btn = page.get_by_role("button", name=label, exact=True).last
+            btn.wait_for(timeout=30000)
+            btn.click()
+            for _ in range(10):
+                page.wait_for_timeout(2000)
+                if len(ctx.request.get(api).json()["chat"]["messages"]["items"]) > before:
+                    break
+            items = ctx.request.get(api).json()["chat"]["messages"]["items"]
+            out(ok=len(items) > before, messages=[{"text": m.get("text") or ""} for m in items[before:]])
+        finally:
+            ctx.close()
+
+
+def export_state(path):
+    """Выгрузить сессию rabota.by (куки) в файл для облачного отклика в GitHub Actions."""
+    with sync_playwright() as pw:
+        ctx = launch(pw, False)
+        try:
+            if not logged_in(ctx):
+                return out(ok=False, reason="not_logged_in")
+            old = os.umask(0o077)
+            ctx.storage_state(path=path)
+            os.umask(old)
+            out(ok=True)
+        finally:
+            ctx.close()
+
+
 def probe(vid):
     with sync_playwright() as pw:
         ctx = launch(pw, False)
@@ -224,9 +343,17 @@ if __name__ == "__main__":
     elif cmd == ["check"]:
         check()
     elif cmd == ["apply"] and len(sys.argv) in (5, 6):
-        apply(sys.argv[2], sys.argv[3], open(sys.argv[4]).read(), dry=sys.argv[5:] == ["--dry"])
+        apply(sys.argv[2], sys.argv[3], open(sys.argv[4]).read(), dry=sys.argv[5:] == ["--dry"], manual=sys.argv[5:] == ["--manual"])
     elif cmd == ["responses"]:
         responses()
+    elif cmd == ["chat"] and len(sys.argv) == 3:
+        chat(sys.argv[2])
+    elif cmd == ["say"] and len(sys.argv) in (4, 5):
+        say(sys.argv[2], sys.argv[3], wait=sys.argv[4:] != ["--nowait"])
+    elif cmd == ["click"] and len(sys.argv) == 4:
+        click(sys.argv[2], sys.argv[3])
+    elif cmd == ["export-state"] and len(sys.argv) == 3:
+        export_state(sys.argv[2])
     elif cmd == ["raise"]:
         raise_resumes()
     elif cmd == ["probe"] and len(sys.argv) == 3:
