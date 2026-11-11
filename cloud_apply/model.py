@@ -1,9 +1,10 @@
 """Шанс, что после отклика позовут (собес, тестовое или живая переписка), по истории откликов Глеба.
 Логистическая регрессия на чистом Python: признаки из полей вакансии, без LLM. Учится на маке (там исходы),
 веса кладёт в ~/job-watch-cloud/model.json (только числа), облако читает тот же файл.
-  python3 model.py train  — обучить и сохранить веса
-  python3 model.py exam   — экзамен: перекрёстная проверка, модель против оценки Opus на тех же откликах"""
-import json, math, os, re, sys, time, html, subprocess
+  python3 model.py  — обучить, сохранить веса и показать экзамены:
+    auc       главный: прогноз записан при отклике, итог пришёл позже (нужно 20 таких откликов)
+    auc_cv    перекрёстная проверка на истории; auc_prior — одни стартовые веса; auc_opus — оценка Opus"""
+import json, math, os, re, time, html, subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEIGHTS = os.path.expanduser("~/job-watch-cloud/model.json")  # мак и облако: корень облачного репо
@@ -18,6 +19,14 @@ ROLES = {"dev": r"engineer|developer|разработчик|программис
 RULE = r"мониторинг|сверк|проверк|аудит|контрол|отч[её]т"
 JUNIOR = r"стаж[её]р|junior|джун|начинающ|ученик|без опыта|intern|студент"
 RATE = {"BYR": 1, "BYN": 1, "RUR": 1 / 29, "USD": 3.2, "EUR": 3.5}
+# Стартовые веса заданы руками 11.11 (вклад в логит шанса): студент без стажа, рынок hh. На ~50 исходах обучение
+# с нуля ничего не находит, поэтому модель стартует отсюда и отходит от этих чисел, только когда данные настаивают.
+PRIOR_BIAS = -1.4  # шанс около 20% у «средней» вакансии
+PRIOR = {"exp_1_3": -0.4, "exp_3plus": -1.5, "junior": 0.6, "role_dev": -0.8, "role_data": 0.4, "role_content": 0.2,
+         "role_market": 0.1, "role_analyst": 0.0, "rule": 0.2, "by": 0.2, "remote": 0.2, "flex": 0.0,
+         "pay_high": -0.5, "no_pay": 0.0, "crowd": -0.4, "few": 0.2}
+SIGMA = 0.2  # насколько мы не уверены в стартовых весах. 11.11 на 51 исходе: 0.2 даёт AUC 0.65 на невиданных, 0.7 уже 0.43
+# (обучение на таких данных ловит шум). Штраф 1/(SIGMA²·n) слабеет сам, когда исходов становится больше
 
 
 def feats(v):
@@ -31,7 +40,8 @@ def feats(v):
     f = {"exp_1_3": exp == "between1And3", "exp_3plus": exp in ("between3And6", "moreThan6"),
          "by": bool(re.search(BY_RE, v.get("area") or "")), "remote": "REMOTE" in (v.get("formats") or []),
          "flex": bool(re.search(r"FLEXIBLE|HOURS_[2-6]\b", hours)), "rule": bool(re.search(RULE, text)),
-         "junior": bool(re.search(JUNIOR, text)), "pay": math.log1p(pay) / 8 if pay else 0, "no_pay": not pay}
+         "junior": bool(re.search(JUNIOR, text)), "pay_high": pay >= 2500, "no_pay": not pay,
+         "crowd": (v.get("resp") or 0) >= 100, "few": v.get("resp") is not None and v["resp"] < 20}
     f.update({"role_" + k: bool(re.search(r, name)) for k, r in ROLES.items()})
     return {k: float(x) for k, x in f.items()}
 
@@ -51,20 +61,20 @@ def load():
         return None
 
 
-def fit(X, y, wt, lam=1.0, steps=3000, lr=0.3):
-    """Градиентный спуск с L2: данных мало (~100 откликов, ~10 успехов), поэтому сильная регуляризация."""
-    keys = sorted({k for x in X for k in x})
-    w, b = {k: 0.0 for k in keys}, 0.0
+def fit(X, y, wt, steps=2000, lr=0.5):
+    """Логрегрессия со штрафом за уход от стартовых весов PRIOR (байесовская оценка MAP)."""
+    w, b = dict(PRIOR), PRIOR_BIAS
     n = sum(wt)
+    lam = 1 / (SIGMA ** 2 * n)
     for _ in range(steps):
-        gw, gb = {k: lam * w[k] for k in keys}, 0.0
+        gw, gb = {k: lam * (w[k] - PRIOR[k]) for k in w}, lam * (b - PRIOR_BIAS)
         for x, t, c in zip(X, y, wt):
-            e = c * (1 / (1 + math.exp(-(b + sum(w[k] * x.get(k, 0) for k in keys)))) - t) / n
+            e = c * (1 / (1 + math.exp(-(b + sum(w[k] * x.get(k, 0) for k in w)))) - t) / n
             gb += e
             for k, xv in x.items():
                 gw[k] += e * xv
         b -= lr * gb
-        for k in keys:
+        for k in w:
             w[k] -= lr * gw[k]
     return {"bias": b, "w": w}
 
@@ -106,6 +116,7 @@ def dataset(fetch_new=10):
         v = a.get("v") or cache.get(str(vid))
         if not t or not v:
             continue
+        v = {**v, "resp": a.get("resp")}
         good = t["state"] == "INTERVIEW" or (t["state"] != "DISCARD" and (t.get("msgs") or 0) >= 3)
         age = (now - time.mktime(time.strptime(t["created"][:16], "%Y-%m-%dT%H:%M"))) / 86400 if t.get("created") else 99
         if good:
@@ -131,28 +142,38 @@ def arm(v):
     return next((k for k, r in ROLES.items() if re.search(r, name)), "other")
 
 
-def cv(X, y, wt, folds=4, seeds=2):
-    """Качество на откликах, которых модель не видела (AUC: 0.5 = монетка, 1 = идеально)."""
+def cv(X, y, wt, folds=4, seeds=3):
+    """AUC на откликах, которых модель не видела. Доли успехов в частях равные: иначе на малых данных AUC занижается сам собой."""
     import random
     res = []
     for seed in range(seeds):
-        idx = list(range(len(y)))
-        random.Random(seed).shuffle(idx)
+        pos, neg = [i for i, t in enumerate(y) if t], [i for i, t in enumerate(y) if not t]
+        random.Random(seed).shuffle(pos)
+        random.Random(seed + 100).shuffle(neg)
+        fold = {i: j % folds for j, i in enumerate(pos + neg)}
         pr = [0.0] * len(y)
         for k in range(folds):
-            te = set(idx[k::folds])
-            w = fit([X[i] for i in idx if i not in te], [y[i] for i in idx if i not in te], [wt[i] for i in idx if i not in te], steps=1500)
-            for i in te:
-                z = w["bias"] + sum(w["w"].get(f, 0) * x for f, x in X[i].items())
-                pr[i] = 1 / (1 + math.exp(-z))
+            tr = [i for i in fold if fold[i] != k]
+            w = fit([X[i] for i in tr], [y[i] for i in tr], [wt[i] for i in tr], steps=800)
+            for i in fold:
+                if fold[i] == k:
+                    pr[i] = w["bias"] + sum(w["w"].get(f, 0) * x for f, x in X[i].items())
         a = auc(pr, y)
         if a is not None:
             res.append(a)
     return round(sum(res) / len(res), 3) if res else None
 
 
+def live(rows, need=20):
+    """Главный экзамен: прогноз записан в момент отклика (поле p), итог пришёл позже. Подогнать нельзя."""
+    got = [(r[3]["p"], r[1]) for r in rows if r[3].get("p") is not None]
+    a = auc([g[0] for g in got], [g[1] for g in got])
+    ok = len(got) >= need and sum(g[1] for g in got) >= 3
+    return (round(a, 3) if a is not None and ok else None), len(got)
+
+
 def train():
-    """Обучить на всех исходах, сдать экзамен и сохранить веса, статистику по типам и итог экзамена."""
+    """Обучить на всех исходах и сохранить веса, статистику по типам и итоги экзаменов."""
     rows = dataset()
     X, y, wt = [feats(r[0]) for r in rows], [r[1] for r in rows], [r[2] for r in rows]
     w = fit(X, y, wt)
@@ -161,19 +182,15 @@ def train():
         a = arms.setdefault(arm(r[0]), [0, 0])
         a[0] += 1
         a[1] += r[1]
-    w.update(n=len(rows), pos=sum(y), base=round(sum(y) / max(1, len(y)), 3), auc=cv(X, y, wt), arms=arms,
-             at=time.strftime("%Y-%m-%d %H:%M"))
+    prior = [PRIOR_BIAS + sum(PRIOR[k] * x for k, x in f.items()) for f in X]
+    w["auc"], w["auc_n"] = live(rows)
+    w.update(n=len(rows), pos=sum(y), base=round(sum(y) / max(1, len(y)), 3), auc_cv=cv(X, y, wt), auc_prior=round(auc(prior, y) or 0, 3),
+             auc_opus=round(auc([r[3].get("score") if r[3].get("score") is not None else 5 for r in rows], y) or 0, 3),
+             arms=arms, at=time.strftime("%Y-%m-%d %H:%M"))
     json.dump(w, open(WEIGHTS, "w"), ensure_ascii=False, indent=1)
     return w
 
 
-def exam():
-    rows = dataset()
-    X, y, wt = [feats(r[0]) for r in rows], [r[1] for r in rows], [r[2] for r in rows]
-    opus = [r[3].get("score") if r[3].get("score") is not None else 5 for r in rows]
-    return {"n": len(rows), "pos": sum(y), "auc_model": cv(X, y, wt, seeds=5), "auc_opus": auc(opus, y)}
-
-
 if __name__ == "__main__":
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "exam"
-    print(json.dumps(train() if cmd == "train" else exam(), ensure_ascii=False, indent=1))
+    w = train()
+    print(json.dumps({k: w[k] for k in w if k != "arms"}, ensure_ascii=False, indent=1))

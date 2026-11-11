@@ -78,7 +78,8 @@ PROMPT = """Ты ведёшь переписку студента Глеба с 
 - от первого лица, просто и по-человечески, на «вы», коротко: обычно 1-4 предложения; без восклицаний, кроме приветствия; подпись «Глеб» с новой строки только в первом ответе этому работодателю;
 - отвечай ровно на то, что спросили, по пунктам, если вопросов несколько; не повторяй резюме и письмо;
 - зовут на созвон: если время названо и подходит под расписание из блока «ГЛЕБ», подтверди его; если не подходит или не названо, предложи 2 конкретных слота по расписанию;
-- без признаков ИИ-текста: никаких «не X, а Y», «Честно, … Но …», пафосных концовок, «буду рад(а) возможности», «готов к новым вызовам», длинных тире, канцелярита, троек ради ритма, мудрых обобщений; каждое предложение сообщает новое.
+- без «буду рад(а) возможности», «готов к новым вызовам» и прочих штампов;
+__HUMAN__
 
 Тестовое или анкета:
 - если это вопросы прямо в чате, ответь на все в reply (по фактам о Глебе);
@@ -102,6 +103,12 @@ auto = true, только если отправить можно без Глеб
  "meeting": "ISO-время созвона или дедлайна с поясом +03:00, если оно названо явно, иначе пусто",
  "auto": false}
 kind = "skip", если вакансия явно не для Глеба (продажи, колл-центр, работа ногами офлайн) и отвечать не стоит."""
+
+
+# правила humanizer одни на письма и на переписку: блок из rubric.md (в корне облачного репо)
+_rub = open(os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "rubric.md")).read()
+HUMAN = _rub[_rub.index("- КАК ЧЕЛОВЕК"):_rub.index("- Без эмодзи")].replace("вернуть письмо", "вернуть ответ").strip()
+PROMPT = PROMPT.replace("__HUMAN__", HUMAN)
 
 
 def ask(text):
@@ -157,18 +164,24 @@ def remember(d, ok):
 
 
 def make(t, edit=None, prev=None):
-    """Прочитать чат, получить черновик Opus и отдать его воркеру. Мелочь отправить сразу."""
+    """Прочитать чат rabota.by, получить черновик Opus и отдать его воркеру. Мелочь отправить сразу."""
     chat = run_apply("chat", t["chat"], timeout=180)
     if not chat.get("ok"):
         raise RuntimeError("чат не прочитался")
     msgs, buttons, can = chat["messages"], chat.get("buttons") or [], str(chat.get("can_write") or "")
-    basis = last_employer(msgs)
-    text = context(t, msgs, buttons, can)
-    if edit:
-        text += f"\n\nПРОШЛЫЙ ЧЕРНОВИК ОТВЕТА:\n{json.dumps(prev or {}, ensure_ascii=False)}\n\nПРАВКИ ГЛЕБА (выполни их точно, это главное):\n{edit}"
+    card = draft({k: t[k] for k in ("chat", "vacancy", "name", "company")}, context(t, msgs, buttons, can),
+                 last_employer(msgs), last_text(msgs), buttons, can, edit, prev)
+    if card["auto"]:
+        send(card)
+
+
+def draft(t, text, basis, q, buttons=(), can="", edit=None, prev=None, auto_ok=True):
+    """Общая часть для rabota.by и Telegram: память ответов, Opus, предохранители, карточка в бот."""
     mem = api("/chat/mem")
     if mem.get("qa"):  # одобренные ответы Глеба: те же факты и тон без новых вопросов к нему
         text += "\n\nПРОШЛЫЕ ОТВЕТЫ ГЛЕБА РАБОТОДАТЕЛЯМ (он их одобрил, факты можно брать):\n" + "\n".join(f"- на «{x['q']}» ответил «{x['a']}»" for x in mem["qa"][-15:])
+    if edit:
+        text += f"\n\nПРОШЛЫЙ ЧЕРНОВИК ОТВЕТА:\n{json.dumps(prev or {}, ensure_ascii=False)}\n\nПРАВКИ ГЛЕБА (выполни их точно, это главное):\n{edit}"
     d = ask(text)
     if can.startswith("DISABLED"):
         d["reply"], d["button"], d["auto"] = "", "", False
@@ -179,14 +192,13 @@ def make(t, edit=None, prev=None):
     # доверие: этот тип Глеб TRUST раз подряд отправил без правок, а фактов не хватило ни разу (attention пуст) — шлём сами
     trusted = not edit and (mem.get("trust") or {}).get(d.get("kind"), 0) >= TRUST and not d.get("attention") \
         and d.get("kind") not in ("test", "offer", "scam", "reject") and bool(d.get("reply") or d.get("button"))
-    d["auto"] = d["auto"] or trusted
-    card = {"chat": str(t["chat"]), "vacancy": t["vacancy"], "name": t["name"], "company": t["company"], "basis": basis,
+    d["auto"] = auto_ok and (d["auto"] or trusted)
+    card = {**t, "chat": str(t["chat"]), "basis": basis,
             **{k: d.get(k) or "" for k in ("kind", "summary", "reply", "button", "solution", "manual", "meeting")},
-            "attention": d.get("attention") or [], "auto": d["auto"], "revised": bool(edit), "q": last_text(msgs)}
+            "attention": d.get("attention") or [], "auto": d["auto"], "revised": bool(edit), "q": q}
     api("/chat/draft", card)
     log("черновик", t["chat"], card["kind"], "авто" if card["auto"] else "")
-    if card["auto"]:
-        send(card)
+    return card
 
 
 def send(d):
@@ -229,9 +241,35 @@ def poll(topics):
         api("/chat/seen", upd)
 
 
+def tg_job(d):
+    """Карточка из Telegram-переписки: отправку и правки делает tg_work.py под аккаунтом Глеба (только после его кнопки)."""
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        json.dump(d, f, ensure_ascii=False)
+    try:
+        r = subprocess.run([os.path.join(DIR, "tgvenv", "bin", "python"), os.path.join(DIR, "tg_work.py"), "job", f.name],
+                           capture_output=True, text=True, timeout=700)
+        res = json.loads(r.stdout.strip().splitlines()[-1])
+    except Exception as e:
+        log("телеграм-задача", d["chat"], "ошибка", type(e).__name__)
+        res = {"sent": False}
+    finally:
+        os.unlink(f.name)
+    if d["status"] == "revise" or res.get("redraft"):  # новая карточка уже в боте
+        if d["status"] == "revise":
+            remember({**d, "revised": True, "auto": False}, True)
+        return
+    api("/chat/done", {"chat": d["chat"], "ok": bool(res.get("sent"))})
+    remember(d, bool(res.get("sent")))
+    log("отправка", d["chat"], "ok" if res.get("sent") else "не ушло")
+
+
 def jobs():
     """Решения Глеба из Telegram: отправить одобренное (если в чате ничего нового) или переписать по правкам."""
     for d in api("/chat/jobs").get("jobs") or []:
+        if str(d["chat"]).startswith("tg"):  # личный Telegram Глеба: сессия есть только на маке, шлёт tg_work.py
+            if not CLOUD:
+                tg_job(d)
+            continue
         t = {"chat": d["chat"], "vacancy": d["vacancy"], "name": d["name"], "company": d["company"]}
         try:
             if d["status"] == "revise":
