@@ -24,6 +24,7 @@ _tok = os.path.join(DIR, "claude.env")  # на маке токен подпис�
 if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") and os.path.exists(_tok):
     os.environ.update(l.strip().split("=", 1) for l in open(_tok) if l.startswith("CLAUDE_CODE_OAUTH_TOKEN="))
 MAX_AUTO = 400  # длиннее автоматом не шлём: длинный ответ почти всегда что-то обещает
+TRUST = 5  # столько отправок подряд без правок, и тип ответа уходит сам
 
 
 def key():
@@ -139,6 +140,22 @@ def last_employer(msgs):
     return str(m["id"]) if m else ""
 
 
+def last_text(msgs):
+    m = next((m for m in reversed(msgs) if not m["mine"] and m["text"].strip()), None)
+    return re.sub(r"\s+", " ", m["text"])[:300] if m else ""
+
+
+def remember(d, ok):
+    """После отправки по кнопке: без правок — плюс к доверию типа и ответ в базу; с правками — доверие с нуля."""
+    if not ok or d.get("auto"):
+        return
+    mem = api("/chat/mem")
+    trust = mem.get("trust") or {}
+    trust[d.get("kind") or "other"] = 0 if d.get("revised") else trust.get(d.get("kind") or "other", 0) + 1
+    qa = (mem.get("qa") or []) + ([{"q": d.get("q") or "", "a": (d.get("reply") or d.get("button") or "")[:400]}] if d.get("q") else [])
+    api("/chat/mem", {"trust": trust, "qa": qa})
+
+
 def make(t, edit=None, prev=None):
     """Прочитать чат, получить черновик Opus и отдать его воркеру. Мелочь отправить сразу."""
     chat = run_apply("chat", t["chat"], timeout=180)
@@ -149,6 +166,9 @@ def make(t, edit=None, prev=None):
     text = context(t, msgs, buttons, can)
     if edit:
         text += f"\n\nПРОШЛЫЙ ЧЕРНОВИК ОТВЕТА:\n{json.dumps(prev or {}, ensure_ascii=False)}\n\nПРАВКИ ГЛЕБА (выполни их точно, это главное):\n{edit}"
+    mem = api("/chat/mem")
+    if mem.get("qa"):  # одобренные ответы Глеба: те же факты и тон без новых вопросов к нему
+        text += "\n\nПРОШЛЫЕ ОТВЕТЫ ГЛЕБА РАБОТОДАТЕЛЯМ (он их одобрил, факты можно брать):\n" + "\n".join(f"- на «{x['q']}» ответил «{x['a']}»" for x in mem["qa"][-15:])
     d = ask(text)
     if can.startswith("DISABLED"):
         d["reply"], d["button"], d["auto"] = "", "", False
@@ -156,9 +176,13 @@ def make(t, edit=None, prev=None):
         d["button"] = ""
     d["auto"] = bool(d.get("auto")) and not edit and (d.get("kind") not in ("test", "form", "offer", "scam", "reject") or d.get("kind") == "form" and d["button"]) \
         and len(d.get("reply") or "") <= MAX_AUTO and bool(d.get("reply") or d.get("button"))
+    # доверие: этот тип Глеб TRUST раз подряд отправил без правок, а фактов не хватило ни разу (attention пуст) — шлём сами
+    trusted = not edit and (mem.get("trust") or {}).get(d.get("kind"), 0) >= TRUST and not d.get("attention") \
+        and d.get("kind") not in ("test", "offer", "scam", "reject") and bool(d.get("reply") or d.get("button"))
+    d["auto"] = d["auto"] or trusted
     card = {"chat": str(t["chat"]), "vacancy": t["vacancy"], "name": t["name"], "company": t["company"], "basis": basis,
             **{k: d.get(k) or "" for k in ("kind", "summary", "reply", "button", "solution", "manual", "meeting")},
-            "attention": d.get("attention") or [], "auto": d["auto"], "revised": bool(edit)}
+            "attention": d.get("attention") or [], "auto": d["auto"], "revised": bool(edit), "q": last_text(msgs)}
     api("/chat/draft", card)
     log("черновик", t["chat"], card["kind"], "авто" if card["auto"] else "")
     if card["auto"]:
@@ -174,6 +198,7 @@ def send(d):
         os.unlink(f.name)
     ok = bool(r and r.get("ok"))
     api("/chat/done", {"chat": d["chat"], "ok": ok})
+    remember(d, ok)
     log("отправка", d["chat"], "ok" if ok else "не ушло")
 
 
@@ -210,6 +235,7 @@ def jobs():
         t = {"chat": d["chat"], "vacancy": d["vacancy"], "name": d["name"], "company": d["company"]}
         try:
             if d["status"] == "revise":
+                remember({**d, "revised": True, "auto": False}, True)  # правка = доверие этому типу с нуля
                 make(t, edit=d.get("edit"), prev={k: d.get(k) for k in ("reply", "solution", "button")})
             elif d["status"] == "approved":
                 chat = run_apply("chat", d["chat"], timeout=180)

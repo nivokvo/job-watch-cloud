@@ -243,6 +243,36 @@ def raise_resumes():
             ctx.close()
 
 
+def suitable():
+    """«Подходящие вакансии» rabota.by для каждого видимого резюме (подбор самого сайта, его видят и работодатели)."""
+    import re, html
+    with sync_playwright() as pw:
+        ctx = launch(pw, False)
+        try:
+            if not logged_in(ctx):
+                return out(ok=False, reason="not_logged_in")
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.goto(f"{BASE}/applicant/resumes", wait_until="domcontentloaded")
+            page.wait_for_timeout(7000)
+            # только видимые резюме: у скрытых и пустых шаблонов на карточке «Сделать видимым»
+            hashes = page.locator('[data-qa="resume"]').evaluate_all(
+                "els => els.filter(e => !e.innerText.includes('Сделать видимым')).map(e => (e.querySelector('[data-qa^=\"resume-card-link-\"]') || {dataset: {}}).dataset.qa).filter(Boolean)")
+            found = {}
+            for h in [x.removeprefix("resume-card-link-") for x in hashes]:
+                t = ctx.request.get(f"{BASE}/search/vacancy?resume={h}&order_by=publication_time&items_on_page=50").text()
+                m = re.search(r'id="HH-Lux-InitialState"[^>]*>(.*?)</template>', t, re.S)
+                if m:
+                    for v in json.loads(html.unescape(m.group(1)), strict=False)["vacancySearchResult"]["vacancies"]:
+                        # только поля для core.norm: целиком выдача не лезет в stdout
+                        keep = ("vacancyId", "name", "company", "area", "compensation", "snippet", "publicationTime", "responsesCount", "workExperience",
+                                "workingHours", "workFormats", "@responseLetterRequired", "userTestPresent", "civilLawContracts")
+                        found[v["vacancyId"]] = {k: v.get(k) for k in keep} | {"vacancyProperties": "HH_ANTIFRAUD" if "HH_ANTIFRAUD" in json.dumps(v.get("vacancyProperties") or {}) else ""}
+                time.sleep(2)
+            out(ok=True, vacancies=list(found.values()))
+        finally:
+            ctx.close()
+
+
 def chat(chat_id):
     """Переписка по отклику: последние сообщения, чьи они и текст."""
     with sync_playwright() as pw:
@@ -354,6 +384,8 @@ if __name__ == "__main__":
         click(sys.argv[2], sys.argv[3])
     elif cmd == ["export-state"] and len(sys.argv) == 3:
         export_state(sys.argv[2])
+    elif cmd == ["suitable"]:
+        suitable()
     elif cmd == ["raise"]:
         raise_resumes()
     elif cmd == ["probe"] and len(sys.argv) == 3:
