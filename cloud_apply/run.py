@@ -8,25 +8,18 @@
 """
 # Репозиторий публичный (с 29.10, ради бесплатных минут Actions): логи видят все, поэтому печатаем только id и цифры
 import json, os, re, subprocess, sys, tempfile, time
+import pick
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(DIR)
 CLOUD = "https://rabota-watch.7vy7m8srtf.workers.dev"
 KEY = os.environ["ROUTINE_KEY"]
-MIN_SCORE = 7
-MIN_CORE = 5  # с 02.11, как на маке: 5-6 только по профилю, где реально зовут
-CORE = r"machine.?learn|\bml\b|data.?scien|аналит|математ|системн|llm|данн|информац|оператор|модератор|контент|карточ|маркетплейс|wildberries|ozon|каталог|ассистент|помощник|вайб.?код|ai.?разработ|ии.?разработ|ai.?инженер|prompt|промпт|claude|cursor|автоматизац|no.?code|нейросет"
-TEXTS = r"копирайт|рерайт|seo|редактор|статьи|автор текст"
-PAY_FLOOR = 23000  # RUR в месяц (~800 BYN); зарплата не указана = проходит
-RATES = ((r"BYN|Br", 29), (r"USD|\$", 80), (r"EUR|€", 90), (r"KZT|₸", 0.15), (r"RUR|RUB|₽|руб", 1))
 CLOUD_PER_DAY = 7  # с 12.10: мак днём часто закрыт (пары), облако должно успевать за будним потоком
 RESERVE_8 = 2  # последние слоты дня держим только для 8+, чтобы семёрки не съели место хорошей вакансии
 GAP = 180  # секунд между откликами подряд
 TOTAL_PER_DAY = 20  # как APPLY_PER_DAY на маке
 DRY = "--dry" in sys.argv or any(a.startswith("--vid=") for a in sys.argv)
-RESUMES = ["Специалист по обработке данных и автоматизации (Python, Excel, ИИ), удалённо", "Оператор ПК, оператор базы данных (удалённо)",
-           "Контент-менеджер, модератор контента (удалённо)", "Ассистент менеджера маркетплейсов (Wildberries, Ozon)",
-           "Специалист по ИИ-автоматизации бизнес-процессов (удалённо, junior)"]
+RESUMES = re.search(r"резюме из списка: (.+?)\.\n", open(os.path.join(ROOT, "rubric.md")).read()).group(1).split("; ")
 FORMAT = """
 
 Верни только JSON-массив без markdown: [{"id": число, "score": 0-10, "auto": 0-100, "pay": BYN в месяц, "hours": часов в неделю, "rate": BYN в час, "growth": "high|mid|low", "why": "до 15 слов почему", "how": "до 20 слов как автоматизировать", "you": "до 15 слов что останется руками"}]
@@ -76,20 +69,6 @@ def apply(v, sc):
         return {"ok": False, "reason": (r.stdout + r.stderr).strip()[-200:]}
 
 
-def pays(sal):
-    nums = [int(x) for x in re.findall(r"\d+", re.sub(r"[\s\u00a0\u202f]", "", sal or ""))]
-    rate = next((r for p, r in RATES if re.search(p, sal or "")), None)
-    return not nums or not rate or max(nums) * rate >= PAY_FLOOR
-
-
-def worth(v, sc):
-    s = sc.get("score") or 0
-    if not pays(v.get("sal")):
-        return False
-    return s >= MIN_SCORE or (s >= MIN_CORE and bool(re.search(CORE, v.get("name") or "", re.I)) and not re.search(TEXTS + "|дизайн", v.get("name") or "", re.I)
-                              and not re.search(r"посредник|реферал|запрет", sc.get("why") or "", re.I))
-
-
 def vacancy(vid):
     """Для проверки руками: вакансия прямо со страницы rabota.by."""
     import html as h
@@ -132,14 +111,15 @@ def main():
     cloud, mac = int(st.get("applied_today", 0)), int(st.get("mac_today", 0))
     # своих не больше CLOUD_PER_DAY, а вместе с маком не больше общего лимита на день
     left = min(CLOUD_PER_DAY - cloud, TOTAL_PER_DAY - cloud - mac)
-    results, last_apply = [], 0
+    results, last_apply, picked = [], 0, 0  # shortcut: модельные отклики считаем только за этот прогон, облако делает их мало
     queue.sort(key=lambda v: -((scores.get(v["id"]) or {}).get("score") or 0))  # сначала лучшие
     for v in queue:
         sc = scores.get(v["id"])
         if not sc:
             continue
-        good = worth(v, sc)
-        res = {"id": v["id"], "score": sc.get("score"), "why": sc.get("why"), "resume": sc.get("resume"), "letter": sc.get("letter"), "good": good}
+        good = pick.worth(v, sc, picked)
+        picked += good == "model"
+        res = {"id": v["id"], "score": sc.get("score"), "why": sc.get("why"), "resume": sc.get("resume"), "letter": sc.get("letter"), "good": bool(good), "pick": good}
         if good and sc.get("letter"):
             if left <= 0:
                 res["apply_reason"] = "дневной лимит облачных откликов"
