@@ -47,10 +47,11 @@ def score(vs):
     r = subprocess.run(["claude", "-p", "--model", "opus", "--system-prompt", system, "--tools", "", "--strict-mcp-config",
                         "--setting-sources", "", "--disable-slash-commands", "--no-session-persistence"],
                        input=text, capture_output=True, text=True, timeout=900)
-    m = re.search(r"\[.*\]", r.stdout, re.S)
-    if r.returncode or not m:
+    i = r.stdout.find("[")
+    if r.returncode or i < 0:
         raise RuntimeError(f"claude -p упал, код {r.returncode}")  # без вывода: логи публичные
-    out = {int(x["id"]): x for x in json.loads(m.group(0), strict=False)}
+    # первый целый массив; приписки Opus после него не мешают (11.11 из-за них упали 5 прогонов подряд)
+    out = {int(x["id"]): x for x in json.JSONDecoder(strict=False).raw_decode(r.stdout[i:])[0]}
     for x in out.values():
         if x.get("letter") and x.get("resume") not in RESUMES:
             x["resume"] = RESUMES[0]
