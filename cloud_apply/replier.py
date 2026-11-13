@@ -326,9 +326,9 @@ def jobs():
             if not CLOUD:
                 tg_job(d)
             continue
-        if str(d["chat"]).startswith("li"):  # LinkedIn: вход тоже только на маке
+        if str(d["chat"]).startswith(("li", "mail")):  # LinkedIn и почта (Mail.app): только на маке
             if not CLOUD:
-                tg_job(d, [PY, os.path.join(DIR, "li.py")])
+                tg_job(d, [PY, os.path.join(DIR, "li.py" if str(d["chat"]).startswith("li") else "mail.py")])
             continue
         t = {"chat": d["chat"], "vacancy": d["vacancy"], "name": d["name"], "company": d["company"]}
         try:
