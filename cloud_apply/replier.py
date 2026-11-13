@@ -296,14 +296,15 @@ def learn(d):
     return True
 
 
-def tg_job(d):
-    """Карточка из Telegram-переписки: отправку и правки делает tg_work.py под аккаунтом Глеба (только после его кнопки)."""
+def tg_job(d, cmd=None):
+    """Карточка из Telegram-переписки: отправку и правки делает tg_work.py под аккаунтом Глеба (только после его кнопки).
+    cmd: другой исполнитель с той же командой job (li.py для LinkedIn)."""
     if learn(d):
         d = {**d, "edit": None}  # факт уже в памяти: tg_work просто соберёт ответ заново
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
         json.dump(d, f, ensure_ascii=False)
     try:
-        r = subprocess.run([os.path.join(DIR, "tgvenv", "bin", "python"), os.path.join(DIR, "tg_work.py"), "job", f.name],
+        r = subprocess.run((cmd or [os.path.join(DIR, "tgvenv", "bin", "python"), os.path.join(DIR, "tg_work.py")]) + ["job", f.name],
                            capture_output=True, text=True, timeout=700)
         res = json.loads(r.stdout.strip().splitlines()[-1])
     except Exception as e:
@@ -324,6 +325,10 @@ def jobs():
         if str(d["chat"]).startswith("tg"):  # личный Telegram Глеба: сессия есть только на маке, шлёт tg_work.py
             if not CLOUD:
                 tg_job(d)
+            continue
+        if str(d["chat"]).startswith("li"):  # LinkedIn: вход тоже только на маке
+            if not CLOUD:
+                tg_job(d, [PY, os.path.join(DIR, "li.py")])
             continue
         t = {"chat": d["chat"], "vacancy": d["vacancy"], "name": d["name"], "company": d["company"]}
         try:
