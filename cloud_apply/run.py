@@ -8,7 +8,7 @@
 """
 # Репозиторий публичный (с 29.10, ради бесплатных минут Actions): логи видят все, поэтому печатаем только id и цифры
 import json, os, re, subprocess, sys, tempfile, time
-import pick
+import pick, replier
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(DIR)
@@ -17,7 +17,7 @@ KEY = os.environ["ROUTINE_KEY"]
 CLOUD_PER_DAY = 7  # с 12.10: мак днём часто закрыт (пары), облако должно успевать за будним потоком
 RESERVE_8 = 2  # последние слоты дня держим только для 8+, чтобы семёрки не съели место хорошей вакансии
 GAP = 180  # секунд между откликами подряд
-TOTAL_PER_DAY = 20  # как APPLY_PER_DAY на маке
+TOTAL_PER_DAY = 60  # как APPLY_PER_DAY на маке (06.11 Глеб: не ограничивать)
 DRY = "--dry" in sys.argv or any(a.startswith("--vid=") for a in sys.argv)
 RESUMES = re.search(r"резюме из списка: (.+?)\.\n", open(os.path.join(ROOT, "rubric.md")).read()).group(1).split("; ")
 FORMAT = """
@@ -44,14 +44,12 @@ def brief(v):
 def score(vs):
     system = open(os.path.join(ROOT, "rubric.md")).read() + FORMAT
     text = f"РЕЗЮМЕ:\n{open(os.path.join(ROOT, 'resume.md')).read()}\n\nВАКАНСИИ:\n" + "\n\n".join(map(brief, vs))
-    r = subprocess.run(["claude", "-p", "--model", "opus", "--system-prompt", system, "--tools", "", "--strict-mcp-config",
-                        "--setting-sources", "", "--disable-slash-commands", "--no-session-persistence"],
-                       input=text, capture_output=True, text=True, timeout=900)
-    i = r.stdout.find("[")
-    if r.returncode or i < 0:
-        raise RuntimeError(f"claude -p упал, код {r.returncode}")  # без вывода: логи публичные
+    raw = replier.claude(text, system, timeout=900)
+    i = raw.find("[")
+    if i < 0:
+        raise RuntimeError("claude -p без JSON")  # без вывода: логи публичные
     # первый целый массив; приписки Opus после него не мешают (11.11 из-за них упали 5 прогонов подряд)
-    out = {int(x["id"]): x for x in json.JSONDecoder(strict=False).raw_decode(r.stdout[i:])[0]}
+    out = {int(x["id"]): x for x in json.JSONDecoder(strict=False).raw_decode(raw[i:])[0]}
     for x in out.values():
         if x.get("letter") and x.get("resume") not in RESUMES:
             x["resume"] = RESUMES[0]
@@ -70,25 +68,10 @@ def apply(v, sc):
         return {"ok": False, "reason": (r.stdout + r.stderr).strip()[-200:]}
 
 
-def vacancy(vid):
-    """Для проверки руками: вакансия прямо со страницы rabota.by."""
-    import html as h
-    t = subprocess.run(["curl", "-s", "-L", "-m", "30", "-A", "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/130 Safari/537.36",
-                        f"https://rabota.by/vacancy/{vid}"], capture_output=True, text=True).stdout
-    def qa(name):
-        m = re.search(rf'data-qa="{name}"[^>]*>(.*?)</(?:h1|span|div|a|p)>', t, re.S)
-        return re.sub(r"\s+", " ", h.unescape(re.sub("<[^>]+>", " ", m.group(1)))).strip() if m else ""
-    m = re.search(r'data-qa="vacancy-description">(.*?)</div>\s*</div>', t, re.S)
-    desc = re.sub(r"\s+", " ", h.unescape(re.sub("<[^>]+>", " ", m.group(1)))).strip() if m else ""
-    n = re.search(r'"employerManager":\s*\{[^{}]*?"firstName":\s*"([^"]+)"', h.unescape(t))
-    return {"id": int(vid), "name": qa("vacancy-title"), "company": qa("vacancy-company-name"), "sal": qa("vacancy-salary"),
-            "exp": qa("vacancy-experience"), "desc": desc[:2500], "manager": n.group(1).strip() if n else None}
-
-
 def main():
     vid = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--vid=")), None)
     if vid:  # проверка: оценить одну вакансию и заполнить отклик без отправки, что бы ни поставил Opus
-        v = vacancy(vid)
+        v = replier.vacancy(vid)
         print("вакансия:", v["id"], "| описание", len(v["desc"]), "знаков")
         sc = score([v]).get(v["id"], {})
         print("Opus:", sc.get("score"))
@@ -104,7 +87,7 @@ def main():
     for v in queue:  # имя контактного лица для обращения в письме
         if not v.get("manager"):
             try:
-                v["manager"] = vacancy(v["id"]).get("manager")
+                v["manager"] = replier.vacancy(v["id"])["manager"]
             except Exception:
                 pass
     scores = score(queue)

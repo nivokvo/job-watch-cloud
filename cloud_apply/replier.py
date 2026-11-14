@@ -60,11 +60,30 @@ def run_apply(*args, timeout=240):
         return {"ok": False, "reason": "apply.py без ответа"}
 
 
-def describe(vid):
-    h = subprocess.run(["curl", "-s", "-L", "-m", "30", "--retry", "2", "-A", UA, f"https://rabota.by/vacancy/{vid}"],
-                       capture_output=True, timeout=90).stdout.decode("utf-8", "replace")
+# имя контактного лица для «Здравствуйте, Имя!»: только похожее на имя (бывает «Отдела», «HR»)
+NAME_RE = re.compile(r"[А-ЯЁ][а-яё]{2,15}( [А-ЯЁ][а-яё]{4,20}(вна|чна|ична|вич|ич))?")
+NOT_NAMES = {"отдела", "отдел", "менеджер", "рекрутер", "кадры", "служба", "компания", "администратор", "руководитель", "директор", "персонал", "команда", "бухгалтерия", "офис"}
+
+
+def vacancy(vid):
+    """Вакансия со страницы rabota.by: один парсер для мака и облака. Сайт не ответил = пустые поля, а не исключение."""
+    try:
+        h = subprocess.run(["curl", "-s", "-L", "-m", "30", "--retry", "2", "-A", UA, f"https://rabota.by/vacancy/{vid}"],
+                           capture_output=True, timeout=120).stdout.decode("utf-8", "replace")
+    except subprocess.TimeoutExpired:  # 14.11: таймаут ронял круг сторожа, а вакансии круга терялись навсегда
+        h = ""
+    clean = lambda s: re.sub(r"\s+", " ", html.unescape(re.sub("<[^>]+>", " ", s))).strip()
+    qa = lambda name: (lambda m: clean(m.group(1)) if m else "")(re.search(rf'data-qa="{name}"[^>]*>(.*?)</(?:h1|span|div|a|p)>', h, re.S))
     m = re.search(r'data-qa="vacancy-description"[^>]*>(.*?)</div>\s*</div>', h, re.S)
-    return re.sub(r"\s+", " ", html.unescape(re.sub("<[^>]+>", " ", m.group(1)))).strip()[:2500] if m else ""
+    n = re.search(r'"employerManager":\s*\{[^{}]*?"firstName":\s*"([^"]+)"', html.unescape(h))
+    name = n.group(1).strip() if n else ""
+    ok = NAME_RE.fullmatch(name) and name.split()[0].lower() not in NOT_NAMES
+    return {"id": int(vid), "name": qa("vacancy-title"), "company": qa("vacancy-company-name"), "sal": qa("vacancy-salary"),
+            "exp": qa("vacancy-experience"), "desc": clean(m.group(1))[:2500] if m else "", "manager": name if ok else None}
+
+
+def describe(vid):
+    return vacancy(vid)["desc"]
 
 
 def page_text(url, limit=5000):
@@ -143,16 +162,25 @@ def critic(text, d):
         return False, type(e).__name__
 
 
-def ask(text, system=None):
+def claude(text, system, model="opus", timeout=600):
+    """Один вызов Claude Code без инструментов: единственное место для мака (core) и облака (run.py). Сырой ответ."""
     env = {**os.environ, "LANG": "en_US.UTF-8"}
     if not CLOUD:
         env["PATH"] = os.path.expanduser("~/.local/bin") + ":/usr/bin:/bin"
-    r = subprocess.run([CLAUDE, "-p", "--model", "opus", "--system-prompt", system or PROMPT, "--tools", "", "--strict-mcp-config",
+    r = subprocess.run([CLAUDE, "-p", "--model", model, "--system-prompt", system, "--tools", "", "--strict-mcp-config",
                         "--setting-sources", "", "--disable-slash-commands", "--no-session-persistence"],
-                       input=text, capture_output=True, text=True, timeout=600, env=env, cwd=DIR)
-    m = re.search(r"\{.*\}", r.stdout, re.S)
-    if r.returncode or not m:
-        raise RuntimeError(f"claude -p упал, код {r.returncode}")
+                       input=text, capture_output=True, text=True, timeout=timeout, env=env, cwd=DIR)
+    if r.returncode or not r.stdout.strip():
+        # в облаке логи публичные: только код. На маке нужен текст: по слову limit сторож переходит на запасную оценку
+        raise RuntimeError(f"claude -p упал, код {r.returncode}" if CLOUD else (r.stdout + r.stderr).strip()[:200])
+    return r.stdout
+
+
+def ask(text, system=None, model="opus"):
+    out = claude(text, system or PROMPT, model)
+    m = re.search(r"\{.*\}", out, re.S)
+    if not m:
+        raise RuntimeError("claude -p без JSON" if CLOUD else out.strip()[:200])
     return json.loads(m.group(0), strict=False)
 
 
@@ -338,7 +366,9 @@ def jobs():
                 make(t, edit=d.get("edit"), prev={k: d.get(k) for k in ("reply", "solution", "button")})
             elif d["status"] == "approved":
                 chat = run_apply("chat", d["chat"], timeout=180)
-                if chat.get("ok") and last_employer(chat["messages"]) != d.get("basis"):
+                if not chat.get("ok"):  # не прочитав чат целиком, не пишем (24.10 ушло в уже закрытую вакансию)
+                    raise RuntimeError("чат не прочитался")
+                if last_employer(chat["messages"]) != d.get("basis"):
                     make(t)  # пока ждали кнопку, работодатель написал ещё: переписываем, ничего не шлём
                 else:
                     send(d)

@@ -54,4 +54,15 @@ mem.clear()
 for _ in range(replier.AUTO_PER_CHAT):
     assert run({})["auto"]
 assert not run({})["auto"]                                               # четвёртый свой ответ подряд в одном чате
+
+# кнопка «Отправить»: шлём, только прочитав чат целиком
+sent, job = [], {"chat": "7", "vacancy": 5, "name": "v", "company": "c", "status": "approved", "basis": "b", "reply": "Да"}
+replier.send = sent.append
+replier.api = lambda path, body=None: {"jobs": [job]} if path == "/chat/jobs" else posted.append((path, body)) or {}
+replier.run_apply = lambda *a, **k: {"ok": False}
+replier.jobs()
+assert not sent and ("/chat/done", {"chat": "7", "ok": False}) in posted  # чат не прочитался: не шлём
+replier.run_apply = lambda *a, **k: {"ok": True, "messages": [{"mine": False, "text": "Удалёнка?", "id": "b"}]}
+replier.jobs()
+assert sent == [job]                                                     # прочитали, нового нет: шлём
 print("ok")

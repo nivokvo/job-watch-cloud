@@ -1,2 +1,4 @@
 graphify-out/
 .graphifyignore
+.DS_Store
+__pycache__/

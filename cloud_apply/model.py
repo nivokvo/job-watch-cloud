@@ -2,7 +2,7 @@
 """Шанс, что после отклика позовут (собес, тестовое или живая переписка), по истории откликов Глеба.
 Логистическая регрессия на чистом Python: признаки из полей вакансии, без LLM. Учится на маке (там исходы),
 веса кладёт в ~/job-hunt/cloud/model.json (только числа), облако читает тот же файл.
-  python3 model.py  — обучить, сохранить веса и показать экзамены:
+  python3 model.py train  — обучить, сохранить веса и показать экзамены (без аргумента только показать текущие):
     auc       главный: прогноз записан при отклике, итог пришёл позже (нужно 20 таких откликов)
     auc_cv    перекрёстная проверка на истории; auc_prior — одни стартовые веса; auc_opus — оценка Opus"""
 import json, math, os, re, sys, time, html, subprocess
@@ -229,5 +229,5 @@ if __name__ == "__main__":
     if "compare" in sys.argv:
         print(json.dumps(compare(), ensure_ascii=False, indent=1))
         sys.exit()
-    w = train()
+    w = train() if "train" in sys.argv else load()  # просто запуск не перезаписывает веса публичного репо
     print(json.dumps({k: w[k] for k in w if k != "arms"}, ensure_ascii=False, indent=1))
