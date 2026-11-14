@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
 """Шанс, что после отклика позовут (собес, тестовое или живая переписка), по истории откликов Глеба.
 Логистическая регрессия на чистом Python: признаки из полей вакансии, без LLM. Учится на маке (там исходы),
-веса кладёт в ~/job-watch-cloud/model.json (только числа), облако читает тот же файл.
+веса кладёт в ~/job-hunt/cloud/model.json (только числа), облако читает тот же файл.
   python3 model.py  — обучить, сохранить веса и показать экзамены:
     auc       главный: прогноз записан при отклике, итог пришёл позже (нужно 20 таких откликов)
     auc_cv    перекрёстная проверка на истории; auc_prior — одни стартовые веса; auc_opus — оценка Opus"""
-import json, math, os, re, time, html, subprocess
+import json, math, os, re, sys, time, html, subprocess
+from datetime import date
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-WEIGHTS = os.path.expanduser("~/job-watch-cloud/model.json")  # мак и облако: корень облачного репо
+WEIGHTS = os.path.expanduser("~/job-hunt/cloud/model.json")  # мак и облако: корень облачного репо
 if not os.path.isdir(os.path.dirname(WEIGHTS)):
     WEIGHTS = os.path.join(os.path.dirname(HERE), "model.json")
 BY_RE = r"Минск|Беларус|Брест|Гомель|Гродно|Витебск|Могил|Бобруйск|Барановичи|Борисов|Пинск|Орша|Мозырь|Солигорск|Лида|Молодечно|Полоцк|Жодино|Слуцк|Речица"
@@ -25,9 +26,17 @@ RATE = {"BYR": 1, "BYN": 1, "RUR": 1 / 29, "USD": 3.2, "EUR": 3.5}
 PRIOR_BIAS = -1.4  # шанс около 20% у «средней» вакансии
 PRIOR = {"exp_1_3": -0.4, "exp_3plus": -1.5, "junior": 0.6, "role_dev": -0.8, "role_data": 0.4, "role_content": 0.2,
          "role_market": 0.1, "role_analyst": 0.0, "rule": 0.2, "by": 0.2, "remote": 0.2, "flex": 0.0,
-         "pay_high": -0.5, "no_pay": 0.0, "crowd": -0.4, "few": 0.2}
+         "pay_high": -0.5, "no_pay": 0.0, "crowd": -0.4, "few": 0.2, "fresh": 0.0}
 SIGMA = 0.2  # насколько мы не уверены в стартовых весах. 11.11 на 51 исходе: 0.2 даёт AUC 0.65 на невиданных, 0.7 уже 0.43
 # (обучение на таких данных ловит шум). Штраф 1/(SIGMA²·n) слабеет сам, когда исходов становится больше
+
+
+def fresh(v):
+    """Отклик в первые сутки после публикации: сюда смотрят сразу, когда откликов ещё мало."""
+    try:
+        return 0 <= (date.fromisoformat(v.get("day") or time.strftime("%Y-%m-%d")) - date.fromisoformat(v["pub"][:10])).days <= 1
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def feats(v):
@@ -42,7 +51,8 @@ def feats(v):
          "by": bool(re.search(BY_RE, v.get("area") or "")), "remote": "REMOTE" in (v.get("formats") or []),
          "flex": bool(re.search(r"FLEXIBLE|HOURS_[2-6]\b", hours)), "rule": bool(re.search(RULE, text)),
          "junior": bool(re.search(JUNIOR, text)), "pay_high": pay >= 2500, "no_pay": not pay,
-         "crowd": (v.get("resp") or 0) >= 100, "few": v.get("resp") is not None and v["resp"] < 20}
+         "crowd": (v.get("resp") or 0) >= 100, "few": v.get("resp") is not None and v["resp"] < 20,
+         "fresh": fresh(v)}
     f.update({"role_" + k: bool(re.search(r, name)) for k, r in ROLES.items()})
     return {k: float(x) for k, x in f.items()}
 
@@ -96,9 +106,11 @@ def vac_page(vid):
                 desc=re.sub(r"\s+", " ", html.unescape(re.sub("<[^>]+>", " ", x.get("description") or "")))[:1500])
 
 
-def dataset(fetch_new=10):
-    """Отклики с исходом. Успех: собес/приглашение или работодатель ведёт переписку (3+ сообщения, не отказ).
-    Неудача: отказ (вес 1) или молчание 7+ дней (вес 0.5). Свежие без ответа и «позвали по резюме» не берём."""
+def dataset(fetch_new=10, target="invite"):
+    """Отклики с исходом. target='invite' (продакшен): успех = собес/приглашение или переписка 3+ сообщений.
+    target='open': успех = работодатель открыл отклик (просмотрел, ответил или отказал).
+    Неудача в обоих: отказ (вес 1) или молчание 7+ дней (вес 0.5). Свежие без ответа не берём.
+    Строка: (вакансия, исход по target, вес, запись отклика, позвали ли)."""
     cache_f = os.path.join(HERE, "vac_cache.json")
     cache = json.load(open(cache_f)) if os.path.exists(cache_f) else {}
     applied = {a["id"]: a for a in map(json.loads, open(os.path.join(HERE, "applied.jsonl"))) if a.get("ok")}
@@ -117,15 +129,16 @@ def dataset(fetch_new=10):
         v = a.get("v") or cache.get(str(vid))
         if not t or not v:
             continue
-        v = {**v, "resp": a.get("resp")}
+        v = {**v, "resp": a.get("resp"), "pub": a.get("pub"), "day": a.get("day")}
         good = t["state"] == "INTERVIEW" or (t["state"] != "DISCARD" and (t.get("msgs") or 0) >= 3)
+        opened = good or t.get("viewed") or t["state"] == "DISCARD"
         age = (now - time.mktime(time.strptime(t["created"][:16], "%Y-%m-%dT%H:%M"))) / 86400 if t.get("created") else 99
-        if good:
-            rows.append((v, 1, 1.0, a))
-        elif t["state"] == "DISCARD":
-            rows.append((v, 0, 1.0, a))
-        elif age >= 7:
-            rows.append((v, 0, 0.5, a))
+        if target == "open":
+            lab = (1, 1.0) if opened else (0, 0.5) if age >= 7 else None
+        else:
+            lab = (1, 1.0) if good else (0, 1.0) if t["state"] == "DISCARD" else (0, 0.5) if age >= 7 else None
+        if lab:
+            rows.append((v, lab[0], lab[1], a, int(good)))
     return rows
 
 
@@ -143,26 +156,46 @@ def arm(v):
     return next((k for k, r in ROLES.items() if re.search(r, name)), "other")
 
 
-def cv(X, y, wt, folds=4, seeds=3):
-    """AUC на откликах, которых модель не видела. Доли успехов в частях равные: иначе на малых данных AUC занижается сам собой."""
+def oof(X, y, wt, folds=4, seed=0):
+    """Прогноз для каждого отклика моделью, которая его не видела. Части с равной долей успехов:
+    иначе на малых данных AUC занижается сам собой."""
     import random
-    res = []
-    for seed in range(seeds):
-        pos, neg = [i for i, t in enumerate(y) if t], [i for i, t in enumerate(y) if not t]
-        random.Random(seed).shuffle(pos)
-        random.Random(seed + 100).shuffle(neg)
-        fold = {i: j % folds for j, i in enumerate(pos + neg)}
-        pr = [0.0] * len(y)
-        for k in range(folds):
-            tr = [i for i in fold if fold[i] != k]
-            w = fit([X[i] for i in tr], [y[i] for i in tr], [wt[i] for i in tr], steps=800)
-            for i in fold:
-                if fold[i] == k:
-                    pr[i] = w["bias"] + sum(w["w"].get(f, 0) * x for f, x in X[i].items())
-        a = auc(pr, y)
-        if a is not None:
-            res.append(a)
+    pos, neg = [i for i, t in enumerate(y) if t], [i for i, t in enumerate(y) if not t]
+    random.Random(seed).shuffle(pos)
+    random.Random(seed + 100).shuffle(neg)
+    fold = {i: j % folds for j, i in enumerate(pos + neg)}
+    pr = [0.0] * len(y)
+    for k in range(folds):
+        tr = [i for i in fold if fold[i] != k]
+        w = fit([X[i] for i in tr], [y[i] for i in tr], [wt[i] for i in tr], steps=800)
+        for i in fold:
+            if fold[i] == k:
+                pr[i] = w["bias"] + sum(w["w"].get(f, 0) * x for f, x in X[i].items())
+    return pr
+
+
+def cv(X, y, wt, y_eval=None, folds=4, seeds=3):
+    """AUC на откликах, которых модель не видела. y_eval — по чему мерить, если учили на другой цели."""
+    res = [auc(oof(X, y, wt, folds, s), y_eval or y) for s in range(seeds)]
+    res = [a for a in res if a is not None]
     return round(sum(res) / len(res), 3) if res else None
+
+
+def compare():
+    """Какая цель лучше предсказывает приглашение: «приглашение» или «открыл»; помогает ли признак fresh.
+    Все AUC на одних и тех же откликах, мерим по приглашению."""
+    rows = dataset(target="open")
+    X = [feats(r[0]) for r in rows]
+    wt, y_open, y_inv = [r[2] for r in rows], [r[1] for r in rows], [r[4] for r in rows]
+    no_fresh = [{k: v for k, v in x.items() if k != "fresh"} for x in X]
+    prior = [PRIOR_BIAS + sum(PRIOR[k] * x for k, x in f.items()) for f in X]
+    out = {"отклики": len(rows), "приглашения": sum(y_inv), "открыто": sum(y_open),
+           "одни стартовые веса": round(auc(prior, y_inv) or 0, 3)}
+    for name, XX in (("с fresh", X), ("без fresh", no_fresh)):
+        out[f"цель приглашение, {name}"] = cv(XX, y_inv, wt, y_eval=y_inv)
+        out[f"цель открыл, {name}"] = cv(XX, y_open, wt, y_eval=y_inv)
+    out["цель открыл, предсказание самого открытия"] = cv(X, y_open, wt, y_eval=y_open)
+    return out
 
 
 def live(rows, need=20):
@@ -193,5 +226,8 @@ def train():
 
 
 if __name__ == "__main__":
+    if "compare" in sys.argv:
+        print(json.dumps(compare(), ensure_ascii=False, indent=1))
+        sys.exit()
     w = train()
     print(json.dumps({k: w[k] for k in w if k != "arms"}, ensure_ascii=False, indent=1))
