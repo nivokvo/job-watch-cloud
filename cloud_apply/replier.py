@@ -331,12 +331,14 @@ def tg_job(d, cmd=None):
         d = {**d, "edit": None}  # факт уже в памяти: tg_work просто соберёт ответ заново
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
         json.dump(d, f, ensure_ascii=False)
+    r = None
     try:
         r = subprocess.run((cmd or [os.path.join(DIR, "tgvenv", "bin", "python"), os.path.join(DIR, "tg_work.py")]) + ["job", f.name],
                            capture_output=True, text=True, timeout=700)
         res = json.loads(r.stdout.strip().splitlines()[-1])
-    except Exception as e:
-        log("телеграм-задача", d["chat"], "ошибка", type(e).__name__)
+    except Exception as e:  # пустой stdout = исполнитель упал: в лог настоящую причину из stderr (15.11 было немое IndexError)
+        err = r and (r.stderr.strip().splitlines() or [""])[-1][:150]
+        log("телеграм-задача", d["chat"], "ошибка", type(e).__name__, err or "")
         res = {"sent": False}
     finally:
         os.unlink(f.name)
