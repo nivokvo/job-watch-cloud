@@ -237,6 +237,7 @@ def town(chat, company=""):
     try:
         if CLOUD:
             raise ImportError
+        sys.path.append(os.path.expanduser("~/job-hunt/code"))  # запуск через симлинк: Python ищет модули рядом с оригиналом
         import crm
     except ImportError:
         return "", {str(chat)}, None
@@ -253,6 +254,7 @@ def tell_town(chat, card):
     if CLOUD:
         return
     try:
+        sys.path.append(os.path.expanduser("~/job-hunt/code"))  # запуск через симлинк: Python ищет модули рядом с оригиналом
         import crm
     except ImportError:
         return

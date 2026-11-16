@@ -36,7 +36,7 @@ def worth(v, sc, model_today=0, w=None):
     if s < MODEL_MIN or model_today >= MODEL_PER_DAY:
         return None
     w = w or model.load()
-    p = model.p(v, w) if w else None
+    p = model.p({**v, "llm": sc}, w) if w else None  # оценка Opus (часы, автоматизация) тоже признак модели
     if p is None:
         return None
     # чем выше шанс, тем чаще берём: при шансе в 1.5 раза выше среднего всегда, при среднем в 2 случаях из 3.

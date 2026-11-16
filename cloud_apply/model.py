@@ -26,7 +26,10 @@ RATE = {"BYR": 1, "BYN": 1, "RUR": 1 / 29, "USD": 3.2, "EUR": 3.5}
 PRIOR_BIAS = -1.4  # шанс около 20% у «средней» вакансии
 PRIOR = {"exp_1_3": -0.4, "exp_3plus": -1.5, "junior": 0.6, "role_dev": -0.8, "role_data": 0.4, "role_content": 0.2,
          "role_market": 0.1, "role_analyst": 0.0, "rule": 0.2, "by": 0.2, "remote": 0.2, "flex": 0.0,
-         "pay_high": -0.5, "no_pay": 0.0, "crowd": -0.4, "few": 0.2, "fresh": 0.0}
+         "pay_high": -0.5, "no_pay": 0.0, "crowd": -0.4, "few": 0.2, "fresh": 0.0,
+         # 16.11 из архива: оценка нейросети при отборе (sc). До 25 ч в неделю зовут чаще (работодатель отказал: «нужен на связи весь день»),
+         # высокая доля автоматизации это роли разработчика, где 0 приглашений из 28. На 114 исходах: CV 0.59 → 0.66, по времени 0.45 → 0.53
+         "part": 0.4, "auto_hi": -0.3}
 SIGMA = 0.2  # насколько мы не уверены в стартовых весах. 11.11 на 51 исходе: 0.2 даёт AUC 0.65 на невиданных, 0.7 уже 0.43
 # (обучение на таких данных ловит шум). Штраф 1/(SIGMA²·n) слабеет сам, когда исходов становится больше
 
@@ -39,8 +42,15 @@ def fresh(v):
         return False
 
 
+def num(x):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
 def feats(v):
-    """v: вакансия в виде core.norm() (name, exp, formats, area, sal, hours, desc)."""
+    """v: вакансия в виде core.norm() (name, exp, formats, area, sal, hours, desc); v["llm"]: оценка при отборе (hours, auto), если есть."""
     name = (v.get("name") or "").lower()
     text = name + " " + (v.get("desc") or "")[:600].lower()
     exp = v.get("exp") or "noExperience"
@@ -53,6 +63,8 @@ def feats(v):
          "junior": bool(re.search(JUNIOR, text)), "pay_high": pay >= 2500, "no_pay": not pay,
          "crowd": (v.get("resp") or 0) >= 100, "few": v.get("resp") is not None and v["resp"] < 20,
          "fresh": fresh(v)}
+    h, au = num((v.get("llm") or {}).get("hours")), num((v.get("llm") or {}).get("auto"))
+    f.update(part=h is not None and h <= 25, auto_hi=au is not None and au >= 70)
     f.update({"role_" + k: bool(re.search(r, name)) for k, r in ROLES.items()})
     return {k: float(x) for k, x in f.items()}
 
@@ -109,10 +121,36 @@ def vac_page(vid):
 def moved():
     """Только на маке: чаты rabota.by, разговор по которым ушёл в Telegram или почту (связь link в журнале crm.py). В облаке пусто."""
     try:
+        sys.path.append(os.path.expanduser("~/job-hunt/code"))  # запуск через симлинк: Python ищет модули рядом с оригиналом
         import crm
         return crm.moved()
     except ImportError:
         return set()
+
+
+def from_archive(target):
+    """На маке: исходы из архива ~/job-hunt/archive (code/archive.py). Он помнит и разговоры, выпавшие из negotiations.json,
+    отказы из rejects.jsonl и разговоры, ушедшие в Telegram. В облаке архива нет: None, считаем по-старому."""
+    try:
+        sys.path.append(os.path.expanduser("~/job-hunt/code"))  # запуск через симлинк: Python ищет модули рядом с оригиналом
+        import archive
+    except ImportError:
+        return None
+    archive.build()
+    rows = []
+    for r in archive.rows():
+        v, a = r.get("vacancy"), {**r["applied"], "id": r["id"]}
+        if not v or r["outcome"] == "pending":
+            continue
+        v = {**v, "resp": a.get("resp"), "pub": a.get("pub"), "day": a.get("day"), "llm": (r.get("scores") or [{}])[-1]}
+        good = r["outcome"] == "invite"
+        if target == "open":
+            opened = good or (r.get("negotiation") or {}).get("viewed") or r["outcome"] == "reject"
+            lab = (1, 1.0) if opened else (0, 0.5)
+        else:
+            lab = (int(good), r["weight"])
+        rows.append((v, lab[0], lab[1], a, int(good)))
+    return rows
 
 
 def dataset(fetch_new=10, target="invite"):
@@ -131,6 +169,9 @@ def dataset(fetch_new=10, target="invite"):
         time.sleep(1)
     if changed:
         json.dump(cache, open(cache_f, "w"), ensure_ascii=False)
+    arch = from_archive(target)
+    if arch is not None:
+        return arch
     rows = []
     now = time.time()
     away = moved()  # 16.11: работодатель позвал в Telegram после 2 сообщений, а модель считала это молчанием
