@@ -193,6 +193,27 @@ def ask(text, system=None, model="opus"):
     return json.loads(m.group(0), strict=False)
 
 
+def pairs(path, days=7):
+    """Занятость Глеба на ближайшие дни: пары из ~/day-system/schedule.json (его сверяет с сайтом мехмата schedule_sync.py) и дела из config.json."""
+    if not os.path.exists(path):
+        return ""
+    d = json.load(open(path))
+    cfg = os.path.join(os.path.dirname(path), "config.json")  # регулярные дела из календаря day-system
+    evs = json.load(open(cfg)).get("events", []) if os.path.exists(cfg) else []
+    w1 = datetime.date.fromisoformat(d["week1_monday"])
+    w1 -= datetime.timedelta(days=w1.weekday())
+    out = []
+    for i in range(days):
+        day = datetime.date.today() + datetime.timedelta(days=i)
+        par = "odd" if ((day - w1).days // 7 + 1) % 2 else "even"
+        ps = sorted((p["start"], p["end"]) for p in d["pairs"] if p["day"] == (day.weekday() + 1) % 7
+                    and (day.isoformat() in p["dates"] if p.get("dates") else p["weeks"] in ("all", par)))
+        ev = [f"{e['time']} {e['title']}" for e in evs if (day.weekday() + 1) % 7 in e.get("days", [])]
+        out.append(f"{day:%d.%m} {['пн','вт','ср','чт','пт','сб','вс'][day.weekday()]}: пары " + (", ".join(f"{a}–{b}" for a, b in ps) or "нет")
+                   + (f"; дела: {', '.join(ev)}" if ev else ""))
+    return "\n\n== ЗАНЯТОСТЬ ГЛЕБА НА 7 ДНЕЙ (точное расписание; созвоны только вне пар и дел, с запасом 30 мин; дела работодателю не называй):\n" + "\n".join(out)
+
+
 def laptop():
     """Только на маке: заметки о проектах Глеба, его сбоях и память Claude. В облаке их нет, там пусто."""
     if CLOUD:
@@ -202,6 +223,7 @@ def laptop():
     paths = [f"{h}/job-hunt/README.md", f"{h}/job-hunt/code/ARCHITECTURE.md", *sorted(glob.glob(f"{h}/job-hunt/fixes/*.md")),
              *sorted(p for p in mem if not p.endswith(("/MEMORY.md", "-private.md")))]  # личные данные (ДР, телефоны) не берём
     notes = "\n\n".join(f"== {os.path.relpath(p, h)}\n{open(p).read()}" for p in paths if os.path.exists(p))
+    notes += pairs(f"{h}/day-system/schedule.json")
     return ("\n\nЗАМЕТКИ С НОУТБУКА ГЛЕБА (внутренние: отсюда бери факты о его проектах, стеке, сбоях и починках; "
             "другие работодатели, цифры откликов и планы поиска работы здесь секрет, работодателю их не пересказывай):\n" + notes) if notes else ""
 
