@@ -36,7 +36,14 @@ def worth(v, sc, model_today=0, w=None):
     if s < MODEL_MIN or model_today >= MODEL_PER_DAY:
         return None
     w = w or model.load()
-    p = model.p({**v, "llm": sc}, w) if w else None  # оценка Opus (часы, автоматизация) тоже признак модели
+    p = None
+    try:  # на маке решает LLM-предсказатель по архиву (code/llm_model.py), в облаке и при его сбое логрегрессия
+        import llm_model
+        p = llm_model.p(v, sc) if w else None
+    except ImportError:
+        pass
+    if p is None:
+        p = model.p({**v, "llm": sc}, w) if w else None  # оценка Opus (часы, автоматизация) тоже признак модели
     if p is None:
         return None
     # чем выше шанс, тем чаще берём: при шансе в 1.5 раза выше среднего всегда, при среднем в 2 случаях из 3.

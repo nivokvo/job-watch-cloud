@@ -249,9 +249,9 @@ def compare():
     return out
 
 
-def live(rows, need=20):
-    """Главный экзамен: прогноз записан в момент отклика (поле p), итог пришёл позже. Подогнать нельзя."""
-    got = [(r[3]["p"], r[1]) for r in rows if r[3].get("p") is not None]
+def live(rows, need=20, key="p"):
+    """Главный экзамен: прогноз записан в момент отклика (поле p, у LLM-предсказателя p_llm), итог пришёл позже. Подогнать нельзя."""
+    got = [(r[3][key], r[1]) for r in rows if r[3].get(key) is not None]
     a = auc([g[0] for g in got], [g[1] for g in got])
     ok = len(got) >= need and sum(g[1] for g in got) >= 3
     return (round(a, 3) if a is not None and ok else None), len(got)
@@ -269,6 +269,7 @@ def train():
         a[1] += r[1]
     prior = [PRIOR_BIAS + sum(PRIOR[k] * x for k, x in f.items()) for f in X]
     w["auc"], w["auc_n"] = live(rows)
+    w["auc_llm"], w["auc_llm_n"] = live(rows, key="p_llm")  # code/llm_model.py: тот же экзамен для DeepSeek
     w.update(n=len(rows), pos=sum(y), base=round(sum(y) / max(1, len(y)), 3), auc_cv=cv(X, y, wt), auc_prior=round(auc(prior, y) or 0, 3),
              auc_opus=round(auc([r[3].get("score") if r[3].get("score") is not None else 5 for r in rows], y) or 0, 3),
              arms=arms, at=time.strftime("%Y-%m-%d %H:%M"))
