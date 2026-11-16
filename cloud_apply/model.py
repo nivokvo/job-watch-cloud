@@ -106,6 +106,15 @@ def vac_page(vid):
                 desc=re.sub(r"\s+", " ", html.unescape(re.sub("<[^>]+>", " ", x.get("description") or "")))[:1500])
 
 
+def moved():
+    """Только на маке: чаты rabota.by, разговор по которым ушёл в Telegram или почту (связь link в журнале crm.py). В облаке пусто."""
+    try:
+        import crm
+        return crm.moved()
+    except ImportError:
+        return set()
+
+
 def dataset(fetch_new=10, target="invite"):
     """Отклики с исходом. target='invite' (продакшен): успех = собес/приглашение или переписка 3+ сообщений.
     target='open': успех = работодатель открыл отклик (просмотрел, ответил или отказал).
@@ -124,13 +133,14 @@ def dataset(fetch_new=10, target="invite"):
         json.dump(cache, open(cache_f, "w"), ensure_ascii=False)
     rows = []
     now = time.time()
+    away = moved()  # 16.11: работодатель позвал в Telegram после 2 сообщений, а модель считала это молчанием
     for vid, a in applied.items():
         t = neg.get(vid)
         v = a.get("v") or cache.get(str(vid))
         if not t or not v:
             continue
         v = {**v, "resp": a.get("resp"), "pub": a.get("pub"), "day": a.get("day")}
-        good = t["state"] == "INTERVIEW" or (t["state"] != "DISCARD" and (t.get("msgs") or 0) >= 3)
+        good = t["state"] == "INTERVIEW" or str(t.get("chat")) in away or (t["state"] != "DISCARD" and (t.get("msgs") or 0) >= 3)
         opened = good or t.get("viewed") or t["state"] == "DISCARD"
         age = (now - time.mktime(time.strptime(t["created"][:16], "%Y-%m-%dT%H:%M"))) / 86400 if t.get("created") else 99
         if target == "open":

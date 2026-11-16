@@ -2,6 +2,13 @@
 import os
 os.environ.setdefault("ROUTINE_KEY", "x")
 import replier
+import sys, tempfile
+sys.path.insert(0, os.path.expanduser("~/job-hunt/code"))
+try:  # общая память crm.py есть только на маке; в тестах её журнал и кэши временные
+    import crm
+    crm.JOURNAL, crm.DIR = tempfile.mktemp(), tempfile.mkdtemp()
+except ImportError:
+    crm = None
 
 mem, posted = {}, []
 answer = {}
@@ -50,10 +57,36 @@ mem.clear()
 assert not run({}, invited=True)["auto"]                                 # статус отклика «приглашение»
 mem.clear()
 assert not run({"meeting": "2026-11-12T17:00:00+03:00"})["auto"]         # назначают время
+assert not crm or crm.state("1")["due"] == "2026-11-12T17:00"            # и срок созвона ушёл в журнал (напоминание, пульт)
 mem.clear()
+if crm:
+    open(crm.JOURNAL, "w").write("")
 for _ in range(replier.AUTO_PER_CHAT):
     assert run({})["auto"]
 assert not run({})["auto"]                                               # четвёртый свой ответ подряд в одном чате
+
+if crm:  # город: один разговор в двух каналах знает одно и то же
+    crm.write(key="9", who="closed", need="ушёл в Telegram")
+    crm.write(key="9", link="tg5")
+    crm.write(key="tg5", event="созвонились, отправил условия 999 ₽")
+    assert crm.group("tg5") == {"9", "tg5"} == crm.group("9") and crm.moved() == {"9"}
+    seen = []
+    replier.ask = lambda text, system=None: seen.append(text) or ({"ok": True} if system else {**GOOD})
+    mem.clear()
+    c = replier.draft({**T, "chat": "tg5"}, "контекст", "b", "q")
+    assert "999 ₽" in seen[0] and "ЖУРНАЛ" in seen[0]                  # журнал из другого канала в промпте
+    assert not c["auto"] and c["handoff"]                                # в журнале разговор закрыт: руль у Глеба
+    assert any("передал Глебу" in (j.get("event") or "") for j in crm.rows())  # бот сам записал это в журнал
+    open(crm.JOURNAL, "w").write("")
+    crm.write(key="3", link="tg8")
+    mem.clear()
+    mem["handoff"] = {"3": 1}
+    assert not replier.draft({**T, "chat": "tg8"}, "к", "b", "q")["auto"]  # руль у Глеба на rabota.by = и в Telegram
+    assert replier.draft({**T, "chat": "tg77"}, "к", "b", "q")["auto"]   # чужой разговор это не задевает
+    crm.write(key="4", who="you", need="созвон", due="2026-11-17T15:00")
+    import datetime as dt
+    assert [j["key"] for j in crm.due_soon(dt.datetime(2026, 11, 17, 13, 0))] == ["4"] and not crm.due_soon(dt.datetime(2026, 11, 17, 10, 0))
+    replier.ask = ask
 
 # кнопка «Отправить»: шлём, только прочитав чат целиком
 sent, job = [], {"chat": "7", "vacancy": 5, "name": "v", "company": "c", "status": "approved", "basis": "b", "reply": "Да"}
