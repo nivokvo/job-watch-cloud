@@ -19,6 +19,8 @@ def api(path, body=None):
         if body:
             mem.update(body)
         return dict(mem)
+    if path == "/chat/lease":
+        return {"ok": True}
     posted.append((path, body))
     return {}
 
@@ -88,39 +90,51 @@ if crm:  # город: один разговор в двух каналах зн
     assert [j["key"] for j in crm.due_soon(dt.datetime(2026, 11, 17, 13, 0))] == ["4"] and not crm.due_soon(dt.datetime(2026, 11, 17, 10, 0))
     replier.ask = ask
 
-# кнопка «Отправить»: шлём, только прочитав чат целиком
-sent, job = [], {"chat": "7", "vacancy": 5, "name": "v", "company": "c", "status": "approved", "basis": "b", "reply": "Да"}
-real_send = replier.send
-replier.send = sent.append
-LEASE = {"ok": True}
-replier.api = lambda path, body=None: {"jobs": [job]} if path == "/chat/jobs" else dict(LEASE) if path == "/chat/lease" else posted.append((path, body)) or {}
+# отправка: send сам продлевает аренду и перечитывает чат прямо перед Enter
+job = {"chat": "7", "vacancy": 5, "name": "v", "company": "c", "status": "approved", "basis": "b", "reply": "Да"}
+LEASE, JOBS, calls, made = {"ok": True}, [job], [], []
+def fake_api(path, body=None):
+    if path == "/chat/jobs":
+        return {"jobs": [dict(j) for j in JOBS]}
+    if path == "/chat/lease":
+        return dict(LEASE)
+    posted.append((path, body))
+    return {}
+def chat_is(*msgs):
+    replier.run_apply = lambda *a, **k: calls.append(a[0]) or ({"ok": True, "messages": list(msgs)} if a[0] == "chat" else {"ok": True})
+replier.api, real_make = fake_api, replier.make
+replier.make = lambda t, **k: made.append(t["chat"])
+Q = {"mine": False, "text": "Удалёнка?", "id": "b"}
+def go():
+    posted.clear(); calls.clear(); made.clear(); replier.jobs()
+    return [c for c in calls if c != "chat"], posted
+
 replier.run_apply = lambda *a, **k: {"ok": False}
-replier.jobs()
-assert not sent and ("/chat/done", {"chat": "7", "ok": False}) in posted  # чат не прочитался: не шлём
-replier.run_apply = lambda *a, **k: {"ok": True, "messages": [{"mine": False, "text": "Удалёнка?", "id": "b"}]}
-replier.jobs()
-assert sent == [job]                                                     # прочитали, нового нет: шлём
-posted.clear()
-replier.run_apply = lambda *a, **k: {"ok": True, "messages": [{"mine": False, "text": "Удалёнка?", "id": "b"}, {"mine": True, "text": "Да", "id": "c"}]}
-replier.jobs()
-assert sent == [job] and ("/chat/done", {"chat": "7", "ok": True}) in posted  # ответ уже в чате («не ушло» при ушедшем): дубль не шлём
-posted.clear()
-replier.run_apply = lambda *a, **k: {"ok": True, "messages": [{"mine": True, "text": " Да\n", "id": "c"}, {"mine": False, "text": "Ок, а когда?", "id": "d"}]}
-replier.jobs()
-assert sent == [job] and ("/chat/done", {"chat": "7", "ok": True}) in posted  # basis выпал из окна 15, ответ в окне: ушёл, не шлём и не переписываем
+assert go() == ([], [("/chat/done", {"chat": "7", "ok": False})])        # чат не прочитался: не шлём, карточка «не ушло»
+chat_is(Q)
+assert go()[0] == ["say"] and ("/chat/done", {"chat": "7", "ok": True}) in posted  # прочитали, нового нет: шлём
+chat_is(Q, {"mine": True, "text": "Да", "id": "c"})
+assert go() == ([], [("/chat/done", {"chat": "7", "ok": True})])         # ответ уже в чате («не ушло» при ушедшем): дубль не шлём
+chat_is({"mine": True, "text": " Да\n", "id": "c"}, {"mine": False, "text": "Ок, а когда?", "id": "d"})
+assert go() == ([], [("/chat/done", {"chat": "7", "ok": True})]) and not made  # basis выпал из окна 15, ответ в окне: ушёл
+chat_is(Q, {"mine": False, "text": "Приглашаем завтра в 15:00", "id": "d"})
+assert go() == ([], []) and made == ["7"]                                # работодатель написал ещё: не шлём, переписываем
+chat_is(Q)
+lists = []
+replier.api = lambda path, body=None: {"jobs": [job] if not lists else [{**job, "status": "revise", "edit": "короче"}]} if path == "/chat/jobs" and not lists.append(1) else fake_api(path, body)
+assert go() == ([], []) and len(lists) == 2                              # Глеб прислал правку, пока задача ждала очереди: старое не шлём
+replier.api = fake_api
 LEASE = {"ok": False, "owner": "gh-1"}
+assert go() == ([], [])                                                  # чат арендован облаком: не трогаем, задача остаётся approved
+calls.clear(); posted.clear()
+replier.send(job)
+assert not calls and posted == [("/chat/done", {"chat": "7", "ok": False})]  # аренду перехватили перед Enter: не шлём, карточка Глебу
+mem.clear()
+replier.api = lambda path, body=None: dict(LEASE) if path == "/chat/lease" else api(path, body)
 posted.clear()
-replier.run_apply = lambda *a, **k: {"ok": True, "messages": [{"mine": False, "text": "Удалёнка?", "id": "b"}]}
-replier.jobs()
-assert sent == [job] and not posted                                      # чат арендован облаком: не трогаем, задача остаётся approved
-replier.send = real_send
-calls = []
-replier.run_apply = lambda *a, **k: calls.append(a) or {"ok": True}
-replier.send(job)
-assert not calls                                                         # аренду перехватили перед Enter: не шлём
+assert not run({})["auto"] and not any(p == "/chat/draft" for p, _ in posted)  # шаг шёл дольше аренды: черновик не кладём
 LEASE = {"ok": True}
-replier.send(job)
-assert calls and calls[0][0] == "say"                                    # аренда наша: шлём
+replier.make = real_make
 
 try:  # say: успех только если ушёл именно этот текст (patchright есть не в каждом питоне)
     import apply

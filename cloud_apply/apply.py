@@ -340,12 +340,15 @@ def click(chat_id, label):
             btn = page.get_by_role("button", name=label, exact=True).last
             btn.wait_for(timeout=30000)
             btn.click()
-            for _ in range(15):
+            for _ in range(15):  # ответ кнопкой виден в чате как своё сообщение с её текстом («Да», «НЕТ»)
                 page.wait_for_timeout(2000)
-                new = [m for m in ctx.request.get(api).json()["chat"]["messages"]["items"] if m["id"] not in before]
-                if new:
+                c = ctx.request.get(api).json()["chat"]
+                me = str(c.get("currentParticipantId"))
+                new = [{"mine": str(m.get("participantId")) == me, "text": m.get("text") or ""}
+                       for m in c["messages"]["items"] if m["id"] not in before]
+                if is_mine(new, label):
                     break
-            out(ok=bool(new), messages=[{"text": m.get("text") or ""} for m in new])
+            out(ok=is_mine(new, label), messages=new)
         finally:
             ctx.close()
 

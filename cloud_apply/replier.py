@@ -60,7 +60,7 @@ class Busy(Exception):
 
 @contextlib.contextmanager
 def lease(key):
-    """Один исполнитель на чат или вакансию: аренда в Durable Object воркера, 10 минут.
+    """Один исполнитель на чат или вакансию: аренда в Durable Object воркера, 30 минут.
     Воркер не ответил = исключение, и действие не делается (лучше не отправить, чем отправить дважды)."""
     r = api("/chat/lease", {"key": str(key), "owner": OWNER})
     if not r.get("ok"):
@@ -397,6 +397,9 @@ def draft(t, text, basis, q, buttons=(), can="", edit=None, prev=None, auto_ok=T
         tell_town(chat, card)
     if card["auto"]:
         upd["autos"] = {**(mem.get("autos") or {}), chat: (mem.get("autos") or {}).get(chat, 0) + 1}
+    if not chat.startswith(("tg", "li", "mail")) and not holding(chat):  # шаг шёл дольше аренды, чат уже у другого: его черновик главнее
+        log("ответ", chat, "аренда у другого исполнителя, черновик не кладу")
+        return {**card, "auto": False}
     if upd:
         api("/chat/mem", upd)
     api("/chat/draft", card)
@@ -417,18 +420,36 @@ def norm(t):
 
 
 def send(d):
-    if not holding(d["chat"]):  # аренду перехватили (истекла посреди шага): шлёт тот, у кого она сейчас
-        return log("отправка", d["chat"], "аренда у другого исполнителя, не шлю")
+    """Единственное место отправки в rabota.by (автоответ и кнопка Глеба): прямо перед Enter продлеваем аренду
+    и перечитываем чат. Ответ уже там = ушёл; работодатель написал ещё = переписываем; любой сбой = карточка «не ушло»."""
+    try:
+        ok, why = deliver(d)
+    except Exception as e:
+        ok, why = False, type(e).__name__
+    log("отправка", d["chat"], "ok" if ok else "не ушло", why)
+    if why == "redraft":  # новый черновик заменит этот
+        return make({k: d[k] for k in ("chat", "vacancy", "name", "company")})
+    api("/chat/done", {"chat": d["chat"], "ok": ok})
+    remember(d, ok)
+
+
+def deliver(d):
+    if not holding(d["chat"]):  # аренду перехватили (шаг шёл дольше неё): не шлём
+        return False, "аренда у другого исполнителя"
+    chat = run_apply("chat", d["chat"], timeout=180)
+    if not chat.get("ok"):  # не прочитав чат целиком, не пишем (24.10 ушло в уже закрытую вакансию)
+        return False, "чат не прочитался"
+    if already_sent(chat["messages"], d):  # сначала: ответ мог уйти, а работодатель уже ответить на него
+        return True, "уже в чате"
+    if last_employer(chat["messages"]) != d.get("basis"):  # пока писали или ждали кнопку, работодатель написал ещё
+        return False, "redraft"
     r = run_apply("click", d["chat"], d["button"]) if d.get("button") else None
     if r is None and d.get("reply"):
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
             f.write(d["reply"])
         r = run_apply("say", d["chat"], f.name, "--nowait")
         os.unlink(f.name)
-    ok = bool(r and r.get("ok"))
-    api("/chat/done", {"chat": d["chat"], "ok": ok})
-    remember(d, ok)
-    log("отправка", d["chat"], "ok" if ok else "не ушло")
+    return bool(r and r.get("ok")), ""
 
 
 def poll(topics):
@@ -494,6 +515,12 @@ def tg_job(d, cmd=None):
     log("отправка", d["chat"], "ok" if res.get("sent") else "не ушло")
 
 
+def fresh(d):
+    """Задача всё ещё такая, какой её взяли из списка: Глеб мог нажать 🙈 или прислать правку, пока шли предыдущие."""
+    cur = next((x for x in api("/chat/jobs").get("jobs") or [] if str(x["chat"]) == str(d["chat"])), None)
+    return bool(cur) and all(cur.get(k) == d.get(k) for k in ("status", "reply", "button", "edit", "basis"))
+
+
 def jobs():
     """Решения Глеба из Telegram: отправить одобренное (если в чате ничего нового) или переписать по правкам."""
     for d in api("/chat/jobs").get("jobs") or []:
@@ -508,20 +535,14 @@ def jobs():
         t = {"chat": d["chat"], "vacancy": d["vacancy"], "name": d["name"], "company": d["company"]}
         try:
             with lease(d["chat"]):  # задачу из /chat/jobs видят и мак, и облако: делает тот, кто арендовал чат
-                if learn(d):
+                if not fresh(d):
+                    log("задача", d["chat"], "изменилась, пока ждала очереди")
+                elif learn(d):
                     make(t, fact=True)
                 elif d["status"] == "revise":
                     make(t, edit=d.get("edit"), prev={k: d.get(k) for k in ("reply", "solution", "button")})
                 elif d["status"] == "approved":
-                    chat = run_apply("chat", d["chat"], timeout=180)
-                    if not chat.get("ok"):  # не прочитав чат целиком, не пишем (24.10 ушло в уже закрытую вакансию)
-                        raise RuntimeError("чат не прочитался")
-                    if already_sent(chat["messages"], d):  # сначала: ответ мог уйти, а работодатель уже ответить на него
-                        api("/chat/done", {"chat": d["chat"], "ok": True})
-                    elif last_employer(chat["messages"]) != d.get("basis"):
-                        make(t)  # пока ждали кнопку, работодатель написал ещё: переписываем, ничего не шлём
-                    else:
-                        send(d)
+                    send(d)
         except Busy as e:
             log("задача", d["chat"], "занята:", e)  # остаётся approved, её сделает арендатор
         except Exception as e:
