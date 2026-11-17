@@ -145,6 +145,18 @@ if apply:
     assert not apply.is_mine([{"mine": True, "text": "написал руками"}], "Да, удалённо")  # своё, но другое: не успех
     assert not apply.is_mine([{"mine": False, "text": "Да, удалённо"}], "Да, удалённо")
 
+# 17.11 вакансия в архиве: счётчик отклика не растёт, но в списке чатов новое сообщение работодателя. Берём в работу один раз
+SEEN = {"9": {"n": 3, "id": "old"}}
+replier.api = lambda path, body=None: {"seen": SEEN} if path == "/chat/seen" and body is None else fake_api(path, body)
+replier.make = lambda t, **k: made.append(t["chat"])
+chat_is({"mine": False, "text": "Вопросы перед тестовым", "id": "new"})
+made.clear(); replier.poll([{"chat": "9", "msgs": 0, "state": "RESPONSE", "last_them": "new"}])
+assert made == ["9"], made
+SEEN["9"]["id"] = "new"
+made.clear(); replier.poll([{"chat": "9", "msgs": 0, "state": "RESPONSE", "last_them": "new"}])
+assert not made
+replier.make = real_make
+
 assert not replier.public_url("http://127.0.0.1:37701/") and not replier.public_url("http://localhost/x")  # ссылки работодателя на мак не открываем
 replier.api = api
 mem.clear()

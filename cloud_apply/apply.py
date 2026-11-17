@@ -207,11 +207,35 @@ def responses():
                 topics += d["applicantNegotiations"]["topicList"]
                 if page_no + 1 >= int(d["applicantNegotiations"].get("pageCount") or 1):
                     break
+            # 17.11: отклик на вакансию, которую работодатель убрал в архив, пропадает из /applicant/negotiations, а писать
+            # в чат он может (так потерялось сообщение 21:03). Новые сообщения берём из списка чатов: там все чаты, свежие сверху
+            last, extra, known = {}, [], {str(t.get("chatId")) for t in topics}
+            try:
+                cj = ctx.request.get("https://chatik.rabota.by/chatik/api/chats").json()
+                res = cj.get("resources") or {}
+                for c in (cj.get("chats") or {}).get("items", []):
+                    lm, cid = c.get("lastMessage") or {}, str(c.get("id"))
+                    if c.get("type") != "NEGOTIATION":
+                        continue
+                    if str(lm.get("participantId")) != str(c.get("currentParticipantId")) and (lm.get("text") or "").strip():
+                        last[cid] = str(lm.get("id"))
+                    if cid in known:
+                        continue
+                    rs = c.get("resources") or {}
+                    tid, vid = (rs.get("NEGOTIATION_TOPIC") or ["0"])[0], (rs.get("VACANCY") or ["0"])[0]
+                    v, nt = (res.get("vacancies") or {}).get(vid) or {}, (res.get("negotiation_topics") or {}).get(tid) or {}
+                    extra.append({"id": int(tid), "vacancyId": int(vid), "lastState": nt.get("currentApplicantState") or "RESPONSE",
+                                  "hasNewMessages": bool(c.get("unreadCount")), "chatId": c.get("id"), "viewedByOpponent": True,
+                                  "creationTime": ""})
+                    names[int(vid)] = (v.get("name", ""), (v.get("company") or {}).get("visibleName") or (v.get("company") or {}).get("name", ""))
+            except Exception as e:  # список чатов только дополняет: без него работаем как раньше
+                print("chatik", type(e).__name__, file=sys.stderr)
             out(ok=True, topics=[{"id": t["id"], "vacancy": t["vacancyId"], "name": names.get(t["vacancyId"], ("", ""))[0],
                                   "company": names.get(t["vacancyId"], ("", ""))[1], "state": t["lastState"],
                                   "new": t.get("hasNewMessages", False), "msgs": t.get("conversationMessagesCount", 0),
                                   "chat": t.get("chatId"), "viewed": t.get("viewedByOpponent", False),
-                                  "created": t.get("creationTime", "")[:16]} for t in topics])
+                                  "created": t.get("creationTime", "")[:16], "last_them": last.get(str(t.get("chatId")), "")}
+                                 for t in topics + extra])
         finally:
             ctx.close()
 

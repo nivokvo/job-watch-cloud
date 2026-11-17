@@ -458,10 +458,12 @@ def poll(topics):
     seen, first = st.get("seen") or {}, not st.get("seen")
     upd = {}
     for t in topics:
-        c = str(t.get("chat") or "")
-        if not c or int(t.get("msgs") or 0) <= (seen.get(c) or {}).get("n", 0):
+        c, prev = str(t.get("chat") or ""), seen.get(str(t.get("chat") or "")) or {}
+        # новое сообщение = вырос счётчик отклика или последнее сообщение работодателя в списке чатов не то, что мы уже разобрали
+        fresh = t.get("last_them") and t["last_them"] != prev.get("id")
+        if not c or (int(t.get("msgs") or 0) <= prev.get("n", 0) and not fresh):
             continue
-        upd[c] = {"n": int(t.get("msgs") or 0), "id": (seen.get(c) or {}).get("id", "")}
+        upd[c] = {"n": max(int(t.get("msgs") or 0), prev.get("n", 0)), "id": prev.get("id", "")}
         if first or t["state"] == "DISCARD":  # первый запуск: только запоминаем; отказы молча
             continue
         try:
