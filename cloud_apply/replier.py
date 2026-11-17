@@ -449,7 +449,7 @@ def deliver(d):
             f.write(d["reply"])
         r = run_apply("say", d["chat"], f.name, "--nowait")
         os.unlink(f.name)
-    return bool(r and r.get("ok")), ""
+    return bool(r and r.get("ok")), (r or {}).get("why", "") if not (r and r.get("ok")) else ""
 
 
 def poll(topics):

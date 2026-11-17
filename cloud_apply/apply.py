@@ -324,7 +324,10 @@ def is_mine(new, text):
 
 
 def say(chat_id, path, wait=True):
-    """Отправить сообщение в чат по отклику через окно чата и подождать ответ (ИИ-помощник отвечает за секунды)."""
+    """Отправить сообщение в чат по отклику тем же запросом, что шлёт сайт (chatik/api/send), и подождать ответ.
+    17.11: через поле ввода в облаке (сессия из файла) Enter не срабатывал, запрос send не уходил. Прямой запрос одинаков на маке и в облаке,
+    idempotencyKey не даёт сайту принять дубль при повторе."""
+    import uuid
     text = open(path).read().strip()
     with sync_playwright() as pw:
         ctx = launch(pw, False)
@@ -333,21 +336,21 @@ def say(chat_id, path, wait=True):
             # новые сообщения узнаём по id, а не по числу: API отдаёт не всю историю, и 8 секунд ожидания мало
             # (12.11 «не ушло» при ушедшем ответе, Глеб нажал ещё раз, и работодателю ушёл дубль)
             before = {m["id"] for m in ctx.request.get(api).json()["chat"]["messages"]["items"]}
-            page = ctx.new_page()
-            page.goto(f"{BASE}/chat/{chat_id}", wait_until="domcontentloaded")
-            box = page.locator('[data-qa="chatik-message-input"] textarea').first
-            box.wait_for(timeout=30000)
-            box.fill(text)
-            box.press("Enter")
-            for _ in range(30 if wait else 15):  # ждём своё сообщение и ответ собеседника (для напоминаний только своё)
-                page.wait_for_timeout(2000)
+            xsrf = next((c["value"] for c in ctx.cookies("https://chatik.rabota.by") if c["name"] == "_xsrf"), "")
+            r = ctx.request.post("https://chatik.rabota.by/chatik/api/send?hhtmSourceLabel=chat&hhtmSource=chat_hh_page",
+                                 data=json.dumps({"chatId": int(chat_id), "idempotencyKey": str(uuid.uuid4()), "text": text}, ensure_ascii=False).encode(),
+                                 headers={"content-type": "application/json", "x-requested-with": "XMLHttpRequest", "x-xsrftoken": xsrf})
+            new = []
+            for _ in range(30 if wait else 15 if r.ok else 0):  # ждём своё сообщение и ответ собеседника (для напоминаний только своё)
+                time.sleep(2)
                 c = ctx.request.get(api).json()["chat"]
                 me = str(c.get("currentParticipantId"))
                 new = [{"mine": str(m.get("participantId")) == me, "text": m.get("text") or ""}
                        for m in c["messages"]["items"] if m["id"] not in before]
                 if is_mine(new, text) and (not wait or not new[-1]["mine"]):
                     break
-            out(ok=is_mine(new, text), messages=new)
+            ok = is_mine(new, text)
+            out(ok=ok, messages=new, why="" if ok else f"send {r.status}: {r.text()[:120]}" if not r.ok else f"сайт принял, но сообщения нет в чате ({len(new)} новых)")
         finally:
             ctx.close()
 
