@@ -155,6 +155,19 @@ assert made == ["9"], made
 SEEN["9"]["id"] = "new"
 made.clear(); replier.poll([{"chat": "9", "msgs": 0, "state": "RESPONSE", "last_them": "new"}])
 assert not made
+# 18.11 лимит Claude посреди разбора: сообщение остаётся неразобранным, следующий круг возьмёт его снова
+SEEN = {"9": {"n": 3, "id": "old"}}
+def fail(err):
+    def make(t, **k):
+        raise err
+    return make
+last_seen = lambda: [b for p, b in posted if p == "/chat/seen"][-1]
+replier.make = fail(RuntimeError("You've hit your 5-hour limit · resets 2am"))
+posted.clear(); replier.poll([{"chat": "9", "msgs": 4, "state": "RESPONSE", "last_them": "new"}])
+assert last_seen() == {"9": {"n": 3, "id": "old"}}, posted
+replier.make = fail(ValueError("битый JSON от Opus"))  # Opus уже отработал: повтор стоил бы лимита, не повторяем
+posted.clear(); replier.poll([{"chat": "9", "msgs": 4, "state": "RESPONSE", "last_them": "new"}])
+assert last_seen() == {"9": {"n": 4, "id": "new"}}, posted
 replier.make = real_make
 
 assert not replier.public_url("http://127.0.0.1:37701/") and not replier.public_url("http://localhost/x")  # ссылки работодателя на мак не открываем

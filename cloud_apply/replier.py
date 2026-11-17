@@ -29,6 +29,7 @@ if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") and os.path.exists(_tok):
 MAX_AUTO = 700  # длиннее автоматом не шлём: длинный ответ почти всегда что-то обещает
 AUTO_PER_CHAT = 3  # больше трёх своих ответов подряд в одном чате: разговор необычный, зовём Глеба
 HANDOFF = ("invite", "offer", "test", "scam")  # с этого момента в этом чате бот сам не пишет
+RETRY = re.compile(r"limit|overload|529|не прочитался|воркер не ответил", re.I)  # Claude не запускался или сеть: повтор ничего не стоит
 
 
 def key():
@@ -48,7 +49,10 @@ def api(path, body=None):
         cmd += ["-X", "POST", "-H", "content-type: application/json", "--data-binary", "@-"]
     r = subprocess.run(cmd, input=json.dumps(body, ensure_ascii=False) if body is not None else None,
                        capture_output=True, text=True, timeout=120)
-    return json.loads(r.stdout)
+    try:
+        return json.loads(r.stdout)
+    except ValueError:  # страница ошибки Cloudflare вместо JSON: пусть это будет видно по тексту, а не немым JSONDecodeError
+        raise RuntimeError("воркер не ответил") from None
 
 
 OWNER = "gh-" + os.environ.get("GITHUB_RUN_ID", str(os.getpid())) if CLOUD else "mac"
@@ -228,7 +232,8 @@ def claude(text, system, model="opus", timeout=600):
                        input=text, capture_output=True, text=True, timeout=timeout, env=env, cwd=DIR)
     if r.returncode or not r.stdout.strip():
         # в облаке логи публичные: только код. На маке нужен текст: по слову limit сторож переходит на запасную оценку
-        raise RuntimeError(f"claude -p упал, код {r.returncode}" if CLOUD else (r.stdout + r.stderr).strip()[:200])
+        out = (r.stdout + r.stderr).strip()
+        raise RuntimeError(f"claude -p упал, код {r.returncode}" + (" (limit)" if re.search(r"limit|overload", out, re.I) else "") if CLOUD else out[:200])
     return r.stdout
 
 
@@ -480,6 +485,8 @@ def poll(topics):
             log("чат", c, "занят:", e)
         except Exception as e:
             log("чат", c, "ошибка", type(e).__name__)
+            if RETRY.search(str(e)):  # 17.11: при лимите Claude сообщение помечалось разобранным и терялось; откатываем, возьмём в следующий круг
+                upd[c] = dict(prev)
     if upd:
         api("/chat/seen", upd)
 
