@@ -90,8 +90,10 @@ if crm:  # город: один разговор в двух каналах зн
 
 # кнопка «Отправить»: шлём, только прочитав чат целиком
 sent, job = [], {"chat": "7", "vacancy": 5, "name": "v", "company": "c", "status": "approved", "basis": "b", "reply": "Да"}
+real_send = replier.send
 replier.send = sent.append
-replier.api = lambda path, body=None: {"jobs": [job]} if path == "/chat/jobs" else posted.append((path, body)) or {}
+LEASE = {"ok": True}
+replier.api = lambda path, body=None: {"jobs": [job]} if path == "/chat/jobs" else dict(LEASE) if path == "/chat/lease" else posted.append((path, body)) or {}
 replier.run_apply = lambda *a, **k: {"ok": False}
 replier.jobs()
 assert not sent and ("/chat/done", {"chat": "7", "ok": False}) in posted  # чат не прочитался: не шлём
@@ -102,6 +104,32 @@ posted.clear()
 replier.run_apply = lambda *a, **k: {"ok": True, "messages": [{"mine": False, "text": "Удалёнка?", "id": "b"}, {"mine": True, "text": "Да", "id": "c"}]}
 replier.jobs()
 assert sent == [job] and ("/chat/done", {"chat": "7", "ok": True}) in posted  # ответ уже в чате («не ушло» при ушедшем): дубль не шлём
+posted.clear()
+replier.run_apply = lambda *a, **k: {"ok": True, "messages": [{"mine": True, "text": " Да\n", "id": "c"}, {"mine": False, "text": "Ок, а когда?", "id": "d"}]}
+replier.jobs()
+assert sent == [job] and ("/chat/done", {"chat": "7", "ok": True}) in posted  # basis выпал из окна 15, ответ в окне: ушёл, не шлём и не переписываем
+LEASE = {"ok": False, "owner": "gh-1"}
+posted.clear()
+replier.run_apply = lambda *a, **k: {"ok": True, "messages": [{"mine": False, "text": "Удалёнка?", "id": "b"}]}
+replier.jobs()
+assert sent == [job] and not posted                                      # чат арендован облаком: не трогаем, задача остаётся approved
+replier.send = real_send
+calls = []
+replier.run_apply = lambda *a, **k: calls.append(a) or {"ok": True}
+replier.send(job)
+assert not calls                                                         # аренду перехватили перед Enter: не шлём
+LEASE = {"ok": True}
+replier.send(job)
+assert calls and calls[0][0] == "say"                                    # аренда наша: шлём
+
+try:  # say: успех только если ушёл именно этот текст (patchright есть не в каждом питоне)
+    import apply
+except ImportError:
+    apply = None
+if apply:
+    assert apply.is_mine([{"mine": True, "text": "Да,  удалённо\n"}], "Да, удалённо")
+    assert not apply.is_mine([{"mine": True, "text": "написал руками"}], "Да, удалённо")  # своё, но другое: не успех
+    assert not apply.is_mine([{"mine": False, "text": "Да, удалённо"}], "Да, удалённо")
 
 assert not replier.public_url("http://127.0.0.1:37701/") and not replier.public_url("http://localhost/x")  # ссылки работодателя на мак не открываем
 replier.api = api

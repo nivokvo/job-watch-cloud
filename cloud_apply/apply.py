@@ -292,6 +292,13 @@ def chat(chat_id):
             ctx.close()
 
 
+def is_mine(new, text):
+    """Ушло именно это сообщение: своё и с тем же текстом (пробелы не в счёт). Своё сообщение с другим текстом,
+    например написанное руками в ту же минуту, успехом не считается."""
+    want = " ".join(text.split())
+    return any(m["mine"] and " ".join(m["text"].split()) == want for m in new)
+
+
 def say(chat_id, path, wait=True):
     """Отправить сообщение в чат по отклику через окно чата и подождать ответ (ИИ-помощник отвечает за секунды)."""
     text = open(path).read().strip()
@@ -300,7 +307,7 @@ def say(chat_id, path, wait=True):
         try:
             api = f"https://chatik.rabota.by/chatik/api/chat_data?chatId={chat_id}&do_not_track_session_events=false"
             # новые сообщения узнаём по id, а не по числу: API отдаёт не всю историю, и 8 секунд ожидания мало
-            # (12.11 «не ушло» при ушедшем ответе, Глеб нажал ещё раз, и в Антиплагиат ушёл дубль)
+            # (12.11 «не ушло» при ушедшем ответе, Глеб нажал ещё раз, и работодателю ушёл дубль)
             before = {m["id"] for m in ctx.request.get(api).json()["chat"]["messages"]["items"]}
             page = ctx.new_page()
             page.goto(f"{BASE}/chat/{chat_id}", wait_until="domcontentloaded")
@@ -314,9 +321,9 @@ def say(chat_id, path, wait=True):
                 me = str(c.get("currentParticipantId"))
                 new = [{"mine": str(m.get("participantId")) == me, "text": m.get("text") or ""}
                        for m in c["messages"]["items"] if m["id"] not in before]
-                if any(m["mine"] for m in new) and (not wait or not new[-1]["mine"]):
+                if is_mine(new, text) and (not wait or not new[-1]["mine"]):
                     break
-            out(ok=any(m["mine"] for m in new), messages=new)
+            out(ok=is_mine(new, text), messages=new)
         finally:
             ctx.close()
 

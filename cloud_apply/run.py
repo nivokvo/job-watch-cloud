@@ -60,7 +60,13 @@ def apply(v, sc):
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
         f.write(sc["letter"])
     args = [sys.executable, os.path.join(DIR, "apply.py"), "apply", str(v["id"]), sc["resume"], f.name] + (["--dry"] if DRY else [])
-    r = subprocess.run(args, capture_output=True, text=True, timeout=300)
+    try:
+        with replier.lease(f"v{v['id']}"):  # одна вакансия = один исполнитель: мак мог проснуться посреди прогона
+            r = subprocess.run(args, capture_output=True, text=True, timeout=300)
+    except replier.Busy:
+        return {"ok": False, "reason": "busy"}
+    except Exception as ex:  # воркер не ответил про аренду: не откликаемся
+        return {"ok": False, "reason": f"lease: {type(ex).__name__}"}
     lines = r.stdout.strip().splitlines()
     try:
         return json.loads(lines[-1])
