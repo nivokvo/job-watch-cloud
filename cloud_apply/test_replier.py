@@ -98,4 +98,19 @@ assert not sent and ("/chat/done", {"chat": "7", "ok": False}) in posted  # ча
 replier.run_apply = lambda *a, **k: {"ok": True, "messages": [{"mine": False, "text": "Удалёнка?", "id": "b"}]}
 replier.jobs()
 assert sent == [job]                                                     # прочитали, нового нет: шлём
+posted.clear()
+replier.run_apply = lambda *a, **k: {"ok": True, "messages": [{"mine": False, "text": "Удалёнка?", "id": "b"}, {"mine": True, "text": "Да", "id": "c"}]}
+replier.jobs()
+assert sent == [job] and ("/chat/done", {"chat": "7", "ok": True}) in posted  # ответ уже в чате («не ушло» при ушедшем): дубль не шлём
+
+assert not replier.public_url("http://127.0.0.1:37701/") and not replier.public_url("http://localhost/x")  # ссылки работодателя на мак не открываем
+replier.api = api
+mem.clear()
+assert not replier.draft(dict(T), "к\n\nСТРАНИЦА http://x:\nтекст", "b", "q")["auto"]  # чужая страница в промпте: сам не шлём
+
+if crm:  # id вакансии вместо id чата в журнале: пишется под чатом
+    import json
+    json.dump({"1": {"vacancy": 555, "chat": 777}}, open(os.path.join(crm.DIR, "negotiations.json"), "w"))
+    crm.write(key="555", who="you", need="x")
+    assert crm.state("777")["need"] == "x"
 print("ok")

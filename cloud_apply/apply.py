@@ -299,21 +299,23 @@ def say(chat_id, path, wait=True):
         ctx = launch(pw, False)
         try:
             api = f"https://chatik.rabota.by/chatik/api/chat_data?chatId={chat_id}&do_not_track_session_events=false"
-            before = len(ctx.request.get(api).json()["chat"]["messages"]["items"])
+            # новые сообщения узнаём по id, а не по числу: API отдаёт не всю историю, и 8 секунд ожидания мало
+            # (12.11 «не ушло» при ушедшем ответе, Глеб нажал ещё раз, и в Антиплагиат ушёл дубль)
+            before = {m["id"] for m in ctx.request.get(api).json()["chat"]["messages"]["items"]}
             page = ctx.new_page()
             page.goto(f"{BASE}/chat/{chat_id}", wait_until="domcontentloaded")
             box = page.locator('[data-qa="chatik-message-input"] textarea').first
             box.wait_for(timeout=30000)
             box.fill(text)
             box.press("Enter")
-            for _ in range(30 if wait else 4):  # ждём своё сообщение и ответ собеседника (для напоминаний только своё)
+            for _ in range(30 if wait else 15):  # ждём своё сообщение и ответ собеседника (для напоминаний только своё)
                 page.wait_for_timeout(2000)
                 c = ctx.request.get(api).json()["chat"]
-                items = c["messages"]["items"]
                 me = str(c.get("currentParticipantId"))
-                if len(items) > before + 1 and str(items[-1].get("participantId")) != me or not wait and len(items) > before:
+                new = [{"mine": str(m.get("participantId")) == me, "text": m.get("text") or ""}
+                       for m in c["messages"]["items"] if m["id"] not in before]
+                if any(m["mine"] for m in new) and (not wait or not new[-1]["mine"]):
                     break
-            new = [{"mine": str(m.get("participantId")) == me, "text": m.get("text") or ""} for m in items[before:]]
             out(ok=any(m["mine"] for m in new), messages=new)
         finally:
             ctx.close()
@@ -325,18 +327,18 @@ def click(chat_id, label):
         ctx = launch(pw, False)
         try:
             api = f"https://chatik.rabota.by/chatik/api/chat_data?chatId={chat_id}&do_not_track_session_events=false"
-            before = len(ctx.request.get(api).json()["chat"]["messages"]["items"])
+            before = {m["id"] for m in ctx.request.get(api).json()["chat"]["messages"]["items"]}
             page = ctx.new_page()
             page.goto(f"{BASE}/chat/{chat_id}", wait_until="domcontentloaded")
             btn = page.get_by_role("button", name=label, exact=True).last
             btn.wait_for(timeout=30000)
             btn.click()
-            for _ in range(10):
+            for _ in range(15):
                 page.wait_for_timeout(2000)
-                if len(ctx.request.get(api).json()["chat"]["messages"]["items"]) > before:
+                new = [m for m in ctx.request.get(api).json()["chat"]["messages"]["items"] if m["id"] not in before]
+                if new:
                     break
-            items = ctx.request.get(api).json()["chat"]["messages"]["items"]
-            out(ok=len(items) > before, messages=[{"text": m.get("text") or ""} for m in items[before:]])
+            out(ok=bool(new), messages=[{"text": m.get("text") or ""} for m in new])
         finally:
             ctx.close()
 

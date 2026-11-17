@@ -86,7 +86,20 @@ def describe(vid):
     return vacancy(vid)["desc"]
 
 
+def public_url(url):
+    """Ссылку из сообщения работодателя открываем, только если она ведёт в интернет, а не на мак (localhost, домашняя сеть)."""
+    import ipaddress, socket, urllib.parse
+    try:
+        host = urllib.parse.urlsplit(url).hostname
+        return all(ipaddress.ip_address(a[4][0].split("%")[0]).is_global for a in socket.getaddrinfo(host, None))
+    except (OSError, ValueError, TypeError, UnicodeError):
+        return False
+
+
 def page_text(url, limit=5000):
+    # shortcut: редирект с публичного адреса на локальный curl -L всё равно пройдёт; ответ с такой страницей бот сам не шлёт (draft)
+    if not public_url(url):
+        return ""
     h = subprocess.run(["curl", "-s", "-L", "-m", "30", "-A", UA, url], capture_output=True, timeout=60).stdout.decode("utf-8", "replace")
     h = re.sub(r"<(script|style|noscript)[^>]*>.*?</\1>", " ", h, flags=re.S | re.I)
     return re.sub(r"\s+", " ", html.unescape(re.sub("<[^>]+>", " ", h))).strip()[:limit]
@@ -294,9 +307,8 @@ def last_text(msgs):
 
 def remember(d, ok):
     """Ответ ушёл по кнопке Глеба: кладём пару вопрос-ответ в базу, бот берёт из неё факты и тон."""
-    if ok and not d.get("auto") and d.get("q"):
-        mem = api("/chat/mem")
-        api("/chat/mem", {"qa": (mem.get("qa") or []) + [{"q": d["q"], "a": (d.get("reply") or d.get("button") or "")[:400]}]})
+    if ok and not d.get("auto") and d.get("q"):  # дописывает воркер: параллельный процесс не затрёт чужую запись
+        api("/chat/mem", {"add_qa": {"q": d["q"], "a": (d.get("reply") or d.get("button") or "")[:400]}})
 
 
 def make(t, edit=None, prev=None, fact=False):
@@ -324,6 +336,7 @@ def draft(t, text, basis, q, buttons=(), can="", edit=None, prev=None, auto_ok=T
     if mem.get("qa"):  # одобренные ответы Глеба: те же факты и тон без новых вопросов к нему
         text += "\n\nПРОШЛЫЕ ОТВЕТЫ ГЛЕБА РАБОТОДАТЕЛЯМ (он их одобрил, факты можно брать):\n" + "\n".join(f"- на «{x['q']}» ответил «{x['a']}»" for x in mem["qa"][-15:])
     ask_text = text
+    auto_ok = auto_ok and "\n\nСТРАНИЦА " not in text  # в промпте чужая страница по ссылке работодателя: сам не шлём
     if edit and not fact:
         ask_text += f"\n\nПРОШЛЫЙ ЧЕРНОВИК ОТВЕТА:\n{json.dumps(prev or {}, ensure_ascii=False)}\n\nПРАВКИ ГЛЕБА (выполни их точно, это главное):\n{edit}"
     d = ask(ask_text)
@@ -358,6 +371,13 @@ def draft(t, text, basis, q, buttons=(), can="", edit=None, prev=None, auto_ok=T
     api("/chat/draft", card)
     log("ответ", chat, card["kind"], "сам" if card["auto"] else f"карточка ({why.split(':')[0]})")
     return card
+
+
+def already_sent(msgs, d):
+    """Одобренный ответ уже стоит в чате после сообщения, на которое отвечали (ушёл, но «не ушло»): второй раз не шлём."""
+    want, ids = (d.get("reply") or d.get("button") or "").strip(), [str(m["id"]) for m in msgs]
+    after = msgs[ids.index(str(d.get("basis"))) + 1:] if str(d.get("basis")) in ids else []
+    return bool(want) and any(m["mine"] and (m.get("text") or "").strip() == want for m in after)
 
 
 def send(d):
@@ -404,8 +424,7 @@ def learn(d):
     """Глеб ответил на вопрос бота (need): это новый факт, запоминаем навсегда. True, если так и было."""
     if d["status"] != "revise" or not d.get("need"):
         return False
-    mem = api("/chat/mem")
-    api("/chat/mem", {"facts": (mem.get("facts") or []) + [{"q": d["need"], "a": (d.get("edit") or "")[:500]}]})
+    api("/chat/mem", {"add_fact": {"q": d["need"], "a": (d.get("edit") or "")[:500]}})
     return True
 
 
@@ -457,6 +476,8 @@ def jobs():
                     raise RuntimeError("чат не прочитался")
                 if last_employer(chat["messages"]) != d.get("basis"):
                     make(t)  # пока ждали кнопку, работодатель написал ещё: переписываем, ничего не шлём
+                elif already_sent(chat["messages"], d):
+                    api("/chat/done", {"chat": d["chat"], "ok": True})
                 else:
                     send(d)
         except Exception as e:
