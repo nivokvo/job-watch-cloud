@@ -393,7 +393,8 @@ def draft(t, text, basis, q, buttons=(), can="", edit=None, prev=None, auto_ok=T
         why = "" if ok else f"проверка: {note}"
     card = {**t, "chat": chat, "basis": basis,
             **{k: d.get(k) or "" for k in ("kind", "summary", "reply", "button", "solution", "manual", "meeting", "need")},
-            "attention": d.get("attention") or [], "auto": not why, "why_card": why, "handoff": handoff, "revised": bool(edit and not fact), "fact": fact, "q": q}
+            "attention": d.get("attention") or [], "auto": not why, "why_card": why, "handoff": handoff, "revised": bool(edit and not fact), "fact": fact, "q": q,
+            "first_why": (prev or {}).get("first_why") or why}  # причина первой карточки: лог отправок считает ложные срабатывания проверки
     if dry:
         return card
     upd = {}
@@ -434,7 +435,7 @@ def send(d):
     log("отправка", d["chat"], "ok" if ok else "не ушло", why)
     if why == "redraft":  # новый черновик заменит этот
         return make({k: d[k] for k in ("chat", "vacancy", "name", "company")})
-    api("/chat/done", {"chat": d["chat"], "ok": ok})
+    api("/chat/done", {"chat": d["chat"], "ok": ok, "why": why})
     remember(d, ok)
 
 
@@ -549,7 +550,7 @@ def jobs():
                 elif learn(d):
                     make(t, fact=True)
                 elif d["status"] == "revise":
-                    make(t, edit=d.get("edit"), prev={k: d.get(k) for k in ("reply", "solution", "button")})
+                    make(t, edit=d.get("edit"), prev={k: d.get(k) for k in ("reply", "solution", "button", "first_why")})
                 elif d["status"] == "approved":
                     send(d)
         except Busy as e:

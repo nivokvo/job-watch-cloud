@@ -1,5 +1,6 @@
 """Предохранители автоответа: python3 test_replier.py. Сеть и Claude подменены."""
 import os
+from unittest.mock import ANY
 os.environ.setdefault("ROUTINE_KEY", "x")
 import replier
 import sys, tempfile
@@ -49,6 +50,9 @@ assert not run({"manual": "заполнить форму"})["auto"]
 assert not run({"reply": "я" * 701})["auto"]
 assert not run({}, auto_ok=False)["auto"]                                # Telegram: только кнопка
 assert not run({}, edit="короче")["auto"]                                # обычные правки: снова карточка
+# лог отправок: причина первой карточки переживает правки
+assert run({}, critic=False)["first_why"].startswith("проверка")
+assert run({}, edit="короче", prev={"first_why": "проверка: x"})["first_why"] == "проверка: x"
 assert run({}, edit="ИП нет", fact=True)["auto"]                         # ответ на вопрос бота: можно слать
 for kind in ("invite", "offer", "test", "scam"):                         # позвали: руль у Глеба, и дальше тоже
     mem.clear()
@@ -110,13 +114,13 @@ def go():
     return [c for c in calls if c != "chat"], posted
 
 replier.run_apply = lambda *a, **k: {"ok": False}
-assert go() == ([], [("/chat/done", {"chat": "7", "ok": False})])        # чат не прочитался: не шлём, карточка «не ушло»
+assert go() == ([], [("/chat/done", {"chat": "7", "ok": False, "why": ANY})])        # чат не прочитался: не шлём, карточка «не ушло»
 chat_is(Q)
-assert go()[0] == ["say"] and ("/chat/done", {"chat": "7", "ok": True}) in posted  # прочитали, нового нет: шлём
+assert go()[0] == ["say"] and ("/chat/done", {"chat": "7", "ok": True, "why": ANY}) in posted  # прочитали, нового нет: шлём
 chat_is(Q, {"mine": True, "text": "Да", "id": "c"})
-assert go() == ([], [("/chat/done", {"chat": "7", "ok": True})])         # ответ уже в чате («не ушло» при ушедшем): дубль не шлём
+assert go() == ([], [("/chat/done", {"chat": "7", "ok": True, "why": ANY})])         # ответ уже в чате («не ушло» при ушедшем): дубль не шлём
 chat_is({"mine": True, "text": " Да\n", "id": "c"}, {"mine": False, "text": "Ок, а когда?", "id": "d"})
-assert go() == ([], [("/chat/done", {"chat": "7", "ok": True})]) and not made  # basis выпал из окна 15, ответ в окне: ушёл
+assert go() == ([], [("/chat/done", {"chat": "7", "ok": True, "why": ANY})]) and not made  # basis выпал из окна 15, ответ в окне: ушёл
 chat_is(Q, {"mine": False, "text": "Приглашаем завтра в 15:00", "id": "d"})
 assert go() == ([], []) and made == ["7"]                                # работодатель написал ещё: не шлём, переписываем
 chat_is(Q)
@@ -128,7 +132,7 @@ LEASE = {"ok": False, "owner": "gh-1"}
 assert go() == ([], [])                                                  # чат арендован облаком: не трогаем, задача остаётся approved
 calls.clear(); posted.clear()
 replier.send(job)
-assert not calls and posted == [("/chat/done", {"chat": "7", "ok": False})]  # аренду перехватили перед Enter: не шлём, карточка Глебу
+assert not calls and posted == [("/chat/done", {"chat": "7", "ok": False, "why": ANY})]  # аренду перехватили перед Enter: не шлём, карточка Глебу
 mem.clear()
 replier.api = lambda path, body=None: dict(LEASE) if path == "/chat/lease" else api(path, body)
 posted.clear()
