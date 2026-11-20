@@ -366,6 +366,11 @@ def draft(t, text, basis, q, buttons=(), can="", edit=None, prev=None, auto_ok=T
     mem = api("/chat/mem")
     chat = str(t["chat"])
     known, keys, st = town(chat, t.get("company", ""))
+    if not CLOUD and not dry and in_session([k for k in {chat, *keys} if len(k) > 5]):
+        log("ответ", chat, "Глеб ведёт чат в сессии Claude, карточку не кладу")
+        card = {**t, "chat": chat, "basis": basis, "kind": "skip", "reply": "", "button": "", "auto": False, "why_card": "сессия Claude"}
+        api("/chat/draft", card)  # skip без ответа воркер не показывает и стирает старую карточку этого чата
+        return card
     text += known
     if mem.get("facts"):
         text += "\n\nФАКТЫ ОТ ГЛЕБА (его ответы на вопросы бота, можно использовать как факты):\n" + "\n".join(f"- {x['q']} — {x['a']}" for x in mem["facts"])
@@ -411,6 +416,32 @@ def draft(t, text, basis, q, buttons=(), can="", edit=None, prev=None, auto_ok=T
     api("/chat/draft", card)
     log("ответ", chat, card["kind"], "сам" if card["auto"] else f"карточка ({why.split(':')[0]})")
     return card
+
+
+def in_session(keys, minutes=30):
+    """Глеб прямо сейчас ведёт этот разговор в живой сессии Claude Code на маке (ключ чата в его сообщениях или ответах Claude
+    за последние minutes): бот молчит, иначе в пульт летит второй ответ. Свои прогоны бот пишет с --no-session-persistence."""
+    since = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=minutes)).isoformat()[:19]
+    for f in glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl")):
+        try:
+            if os.path.getmtime(f) < datetime.datetime.now().timestamp() - minutes * 60:
+                continue
+            lines = open(f, encoding="utf-8", errors="ignore").readlines()
+        except OSError:
+            continue
+        for line in reversed(lines):
+            if '"timestamp":"' not in line:
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if (e.get("timestamp") or "")[:19] < since:
+                break
+            # подсказки хуков (список открытых разговоров) не считаются: только реплики Глеба и Claude
+            if e.get("type") in ("user", "assistant") and any(k in json.dumps(e.get("message"), ensure_ascii=False) for k in keys):
+                return True
+    return False
 
 
 def already_sent(msgs, d):
