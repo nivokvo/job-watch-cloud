@@ -5,7 +5,8 @@ Opus решает по score (7+). Модель добавляет до MODEL_PE
 import random, re
 import model
 
-MIN_SCORE = 7
+MIN_SCORE = 7  # копия в code/cloud/worker.js (MIN_SCORE): меняй обе
+RESERVE_8 = 2  # последние слоты дня держим только для 8+, мак и облако
 MODEL_MIN = 5
 MODEL_PER_DAY = 3
 GATE = 0.6  # AUC главного экзамена (model.live): прогноз записан при отклике, итог пришёл позже; 0.5 = монетка

@@ -488,6 +488,12 @@ def poll(topics):
             log("чат", c, "ошибка", type(e).__name__)
             if RETRY.search(str(e)):  # 17.11: при лимите Claude сообщение помечалось разобранным и терялось; откатываем, возьмём в следующий круг
                 upd[c] = dict(prev)
+            else:  # Opus уже отработал (битый JSON): повтор стоил бы лимита. 20.11: но и молча не теряем, карточка «посмотри сам»
+                with contextlib.suppress(Exception):
+                    api("/chat/draft", {"vacancy": t.get("vacancy") or 0, "name": t.get("name") or "", "company": t.get("company") or "", "chat": c, "kind": "question",
+                                        "summary": "Новое сообщение, бот не смог его разобрать: посмотри чат сам", "attention": [], "reply": "",
+                                        "button": "", "solution": "", "manual": "", "meeting": "", "need": "", "auto": False,
+                                        "why_card": "сбой разбора", "basis": "", "q": ""})
     if upd:
         api("/chat/seen", upd)
 

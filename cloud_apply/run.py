@@ -15,7 +15,6 @@ ROOT = os.path.dirname(DIR)
 CLOUD = "https://rabota-watch.7vy7m8srtf.workers.dev"
 KEY = os.environ["ROUTINE_KEY"]
 CLOUD_PER_DAY = 7  # с 12.10: мак днём часто закрыт (пары), облако должно успевать за будним потоком
-RESERVE_8 = 2  # последние слоты дня держим только для 8+, чтобы семёрки не съели место хорошей вакансии
 GAP = 180  # секунд между откликами подряд
 TOTAL_PER_DAY = 60  # как APPLY_PER_DAY на маке (06.11 Глеб: не ограничивать)
 DRY = "--dry" in sys.argv or any(a.startswith("--vid=") for a in sys.argv)
@@ -113,7 +112,7 @@ def main():
         if good and sc.get("letter"):
             if left <= 0:
                 res["apply_reason"] = "дневной лимит облачных откликов"
-            elif sc.get("score") < 8 and left <= RESERVE_8:
+            elif sc.get("score") < 8 and left <= pick.RESERVE_8:
                 res["apply_reason"] = "последние слоты дня оставлены под 8+"
             else:
                 # подряд откликаться нельзя: 7 откликов за 2 минуты 23.10 дали капчу. Первый идёт сразу, следующие с паузой
@@ -127,6 +126,8 @@ def main():
                 left -= 1 if res["applied"] else 0
         print(v["id"], sc.get("score"))
         results.append(res)
+        if res.get("apply_reason") == "captcha":  # капчу не обходим и дальше не лезем: на маке тут пауза, здесь конец прогона
+            break
     if DRY:
         print("сухой прогон, вердикт не отправляю:", len(results), "вакансий")
         return

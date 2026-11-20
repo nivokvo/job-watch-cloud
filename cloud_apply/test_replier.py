@@ -172,6 +172,7 @@ assert last_seen() == {"9": {"n": 3, "id": "old"}}, posted
 replier.make = fail(ValueError("битый JSON от Opus"))  # Opus уже отработал: повтор стоил бы лимита, не повторяем
 posted.clear(); replier.poll([{"chat": "9", "msgs": 4, "state": "RESPONSE", "last_them": "new"}])
 assert last_seen() == {"9": {"n": 4, "id": "new"}}, posted
+assert any(p == "/chat/draft" and b["chat"] == "9" and not b["auto"] for p, b in posted), posted  # но Глеб узнаёт: карточка «посмотри сам»
 replier.make = real_make
 
 assert not replier.public_url("http://127.0.0.1:37701/") and not replier.public_url("http://localhost/x")  # ссылки работодателя на мак не открываем
