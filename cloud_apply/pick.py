@@ -10,7 +10,7 @@ RESERVE_8 = 2  # последние слоты дня держим только 
 MODEL_MIN = 5
 MODEL_PER_DAY = 3
 GATE = 0.6  # AUC главного экзамена (model.live): прогноз записан при отклике, итог пришёл позже; 0.5 = монетка
-PAY_FLOOR = 23000  # RUR в месяц (~800 BYN), по верхней границе; зарплата не указана = проходит
+PAY_FLOOR = 0  # 20.11 Глеб: фильтра по зарплате нет, подработки бывают дешёвые, отбирает сам
 RATES = ((r"BYN|Br", 29), (r"USD|\$", 80), (r"EUR|€", 90), (r"KZT|₸", 0.15), (r"RUR|RUB|₽|руб", 1))
 BAD = r"посредник|реферал|запрет"
 
@@ -53,10 +53,10 @@ def worth(v, sc, model_today=0, w=None):
 
 
 if __name__ == "__main__":  # самопроверка
-    assert pays("") and pays("1500 BYN") and not pays("500 BYN") and pays("40000 RUR")
+    assert pays("") and pays("1500 BYN") and pays("500 BYN") and pays("40000 RUR")
     w = {"base": 0.2, "auc": None, "bias": model.PRIOR_BIAS, "w": dict(model.PRIOR)}
     assert worth({"sal": ""}, {"score": 8}, w=w) == "opus"
-    assert worth({"sal": "400 BYN"}, {"score": 9}, w=w) is None
+    assert worth({"sal": "400 BYN"}, {"score": 9}, w=w) == "opus"
     assert worth({"sal": ""}, {"score": 6}, model_today=3, w=w) is None
     dev = {"name": "Senior Python разработчик", "exp": "between3And6", "resp": 300}
     easy = {"name": "Стажёр, модератор данных", "exp": "noExperience", "formats": ["REMOTE"], "resp": 5}
