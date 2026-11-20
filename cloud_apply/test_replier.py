@@ -54,6 +54,11 @@ assert not run({}, edit="короче")["auto"]                                #
 assert run({}, critic=False)["first_why"].startswith("проверка")
 assert run({}, edit="короче", prev={"first_why": "проверка: x"})["first_why"] == "проверка: x"
 assert run({}, edit="ИП нет", fact=True)["auto"]                         # ответ на вопрос бота: можно слать
+c = run({"quotes": ["три года в Яндексе"]})                               # цитаты нет в блоках: факт выдуман, карточка
+assert not c["auto"] and c["why_card"].startswith("цитаты нет")
+assert run({"quotes": [" КОНТЕКСТ "]})["auto"]                           # цитата есть (регистр и пробелы не в счёт): шлём
+k = dict(chat="7", basis="b", reply="Да,  удалённо")
+assert replier.send_key(k) == replier.send_key({**k, "reply": "Да, удалённо\n"}) != replier.send_key({**k, "basis": "c"})  # повтор = тот же ключ
 for kind in ("invite", "offer", "test", "scam"):                         # позвали: руль у Глеба, и дальше тоже
     mem.clear()
     c = run({"kind": kind})

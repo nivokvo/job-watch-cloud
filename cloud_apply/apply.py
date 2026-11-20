@@ -323,10 +323,10 @@ def is_mine(new, text):
     return any(m["mine"] and " ".join(m["text"].split()) == want for m in new)
 
 
-def say(chat_id, path, wait=True):
+def say(chat_id, path, wait=True, key=None):
     """Отправить сообщение в чат по отклику тем же запросом, что шлёт сайт (chatik/api/send), и подождать ответ.
     17.11: через поле ввода в облаке (сессия из файла) Enter не срабатывал, запрос send не уходил. Прямой запрос одинаков на маке и в облаке,
-    idempotencyKey не даёт сайту принять дубль при повторе."""
+    idempotencyKey не даёт сайту принять дубль при повторе: replier передаёт один ключ на один ответ (20.11, с Reddit: свежий uuid на каждый повтор дубль не ловил)."""
     import uuid
     text = open(path).read().strip()
     with sync_playwright() as pw:
@@ -338,7 +338,7 @@ def say(chat_id, path, wait=True):
             before = {m["id"] for m in ctx.request.get(api).json()["chat"]["messages"]["items"]}
             xsrf = next((c["value"] for c in ctx.cookies("https://chatik.rabota.by") if c["name"] == "_xsrf"), "")
             r = ctx.request.post("https://chatik.rabota.by/chatik/api/send?hhtmSourceLabel=chat&hhtmSource=chat_hh_page",
-                                 data=json.dumps({"chatId": int(chat_id), "idempotencyKey": str(uuid.uuid4()), "text": text}, ensure_ascii=False).encode(),
+                                 data=json.dumps({"chatId": int(chat_id), "idempotencyKey": key or str(uuid.uuid4()), "text": text}, ensure_ascii=False).encode(),
                                  headers={"content-type": "application/json", "x-requested-with": "XMLHttpRequest", "x-xsrftoken": xsrf})
             new = []
             for _ in range(30 if wait else 15 if r.ok else 0):  # ждём своё сообщение и ответ собеседника (для напоминаний только своё)
@@ -417,8 +417,9 @@ if __name__ == "__main__":
         responses()
     elif cmd == ["chat"] and len(sys.argv) == 3:
         chat(sys.argv[2])
-    elif cmd == ["say"] and len(sys.argv) in (4, 5):
-        say(sys.argv[2], sys.argv[3], wait=sys.argv[4:] != ["--nowait"])
+    elif cmd == ["say"] and len(sys.argv) in (4, 5, 6):
+        rest = sys.argv[4:]
+        say(sys.argv[2], sys.argv[3], wait="--nowait" not in rest, key=next((a[6:] for a in rest if a.startswith("--key=")), None))
     elif cmd == ["click"] and len(sys.argv) == 4:
         click(sys.argv[2], sys.argv[3])
     elif cmd == ["export-state"] and len(sys.argv) == 3:
