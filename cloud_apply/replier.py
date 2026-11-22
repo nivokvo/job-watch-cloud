@@ -249,6 +249,13 @@ def claude(text, system, model="opus", timeout=600):
     env = {**os.environ, "LANG": "en_US.UTF-8"}
     if not CLOUD:
         env["PATH"] = os.path.expanduser("~/.local/bin") + ":/usr/bin:/bin"
+        # на маке Claude ходит только через локальный прокси: --setting-sources "" не берёт env из ~/.claude/settings.json,
+        # а у launchd прокси нет, без этого запросы шли бы напрямую
+        px = "http://127.0.0.1:12334"
+        env.update(HTTPS_PROXY=px, HTTP_PROXY=px, https_proxy=px, http_proxy=px,
+                   NO_PROXY="localhost,127.0.0.1,::1", no_proxy="localhost,127.0.0.1,::1")
+        for k in ("ALL_PROXY", "all_proxy"):
+            env.pop(k, None)
     r = subprocess.run([CLAUDE, "-p", "--model", model, "--system-prompt", system, "--tools", "", "--strict-mcp-config",
                         "--setting-sources", "", "--disable-slash-commands", "--no-session-persistence"],
                        input=text, capture_output=True, text=True, timeout=timeout, env=env, cwd=DIR)
