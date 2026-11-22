@@ -1,0 +1,30 @@
+name: claude-proxy-check
+# Проверка без побочных эффектов: поднимает тот же прокси, что cloud-apply/cloud-chats, и смотрит страну для API Claude.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Claude proxy
+        env:
+          XRAY_CLIENT_JSON: ${{ secrets.XRAY_CLIENT_JSON }}
+        run: bash cloud_apply/vps_proxy.sh
+      - name: Без прокси Claude не зовётся
+        run: |
+          python3 - <<'P'
+          import os, sys
+          os.environ["RABOTA_STATE_FILE"] = "/dev/null"
+          os.environ.pop("CLAUDE_HTTPS_PROXY", None)
+          sys.path.insert(0, "cloud_apply")
+          import replier
+          try:
+              replier.claude("x", "x")
+              sys.exit("ошибка: claude вызван без прокси")
+          except RuntimeError as e:
+              print("ок:", e)
+          P
