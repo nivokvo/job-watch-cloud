@@ -39,14 +39,17 @@ def _launch(pw, visible):
                                   viewport={"width": 1280, "height": 900})
         ctx.close_browser = browser.close
         return ctx
+    # внутри песочницы Claude прямой выход закрыт: браузер идёт через локальный xray, а тот пускает rabota.by
+    # напрямую с домашнего IP (как у демона). Демон (launchd) песочницы не знает и ходит напрямую, как раньше.
+    proxy = {"server": "http://127.0.0.1:12334"} if os.environ.get("CLAUDE_NET_JAILED") else None
     # visible only for login; otherwise headless so no window ever steals focus
     if not visible:
         return pw.chromium.launch_persistent_context(PROFILE, headless=True, channel="chromium", locale="ru-RU",
                                                      timezone_id="Europe/Minsk", viewport={"width": 1280, "height": 900},
-                                                     args=["--lang=ru-RU"])
+                                                     args=["--lang=ru-RU"], proxy=proxy)
     return pw.chromium.launch_persistent_context(PROFILE, headless=False, channel="chromium", no_viewport=True,
                                                  locale="ru-RU", timezone_id="Europe/Minsk",
-                                                 args=["--lang=ru-RU", "--window-size=1280,900"])
+                                                 args=["--lang=ru-RU", "--window-size=1280,900"], proxy=proxy)
 
 
 def logged_in(ctx):
