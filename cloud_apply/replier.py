@@ -424,6 +424,7 @@ def draft(t, text, basis, q, buttons=(), can="", edit=None, prev=None, auto_ok=T
            else "длинный ответ" if len(d.get("reply") or "") > MAX_AUTO else "пусто" if not (d.get("reply") or d.get("button"))
            else "много своих ответов в чате" if (mem.get("autos") or {}).get(chat, 0) >= AUTO_PER_CHAT
            else f"цитаты нет в фактах: {unquoted(d, text)[0][:60]}" if unquoted(d, text)
+           else "нет цитат" if d.get("reply") and not d.get("quotes")  # 23.11: без цитат кодом нечего проверять, остался бы только Opus над Opus
            else "" if auto_ok else "канал только с кнопкой")
     if not why:  # все дешёвые предохранители пройдены: слово за независимым проверяющим
         ok, note = critic(text, d)

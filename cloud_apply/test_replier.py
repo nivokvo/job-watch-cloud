@@ -32,7 +32,7 @@ def ask(text, system=None):
 
 replier.api, replier.ask = api, ask
 T = {"chat": "1", "vacancy": 5, "name": "v", "company": "c"}
-GOOD = {"kind": "question", "reply": "Да, удалённо из Минска.", "auto": True, "attention": [], "need": "", "manual": "", "meeting": ""}
+GOOD = {"kind": "question", "reply": "Да, удалённо из Минска.", "quotes": ["к"], "auto": True, "attention": [], "need": "", "manual": "", "meeting": ""}  # "к" есть в любом тестовом контексте
 
 
 def run(opus, critic=True, **kw):
@@ -57,6 +57,10 @@ assert run({}, edit="ИП нет", fact=True)["auto"]                         # 
 c = run({"quotes": ["три года в Яндексе"]})                               # цитаты нет в блоках: факт выдуман, карточка
 assert not c["auto"] and c["why_card"].startswith("цитаты нет")
 assert run({"quotes": [" КОНТЕКСТ "]})["auto"]                           # цитата есть (регистр и пробелы не в счёт): шлём
+mem.clear()
+c = run({"quotes": []})                                                  # ответ без цитат: проверять кодом нечего, карточка
+assert not c["auto"] and c["why_card"] == "нет цитат"
+assert run({"quotes": [], "reply": "", "button": "Да"}, buttons=("Да",))["auto"]  # только кнопка: цитаты не нужны
 k = dict(chat="7", basis="b", reply="Да,  удалённо")
 assert replier.send_key(k) == replier.send_key({**k, "reply": "Да, удалённо\n"}) != replier.send_key({**k, "basis": "c"})  # повтор = тот же ключ
 for kind in ("invite", "offer", "test", "scam"):                         # позвали: руль у Глеба, и дальше тоже
