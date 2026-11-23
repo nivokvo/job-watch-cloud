@@ -36,6 +36,8 @@ def worth(v, sc, model_today=0, w=None):
         return "opus"
     if s < MODEL_MIN or model_today >= MODEL_PER_DAY:
         return None
+    if re.search(r"выезд|разъезд", sc.get("why") or "", re.I):  # пробный отклик только на удалёнку: 20.11 ушёл на обход точек в Борисове
+        return None
     w = w or model.load()
     p = None
     try:  # на маке решает LLM-предсказатель по архиву (code/llm_model.py), в облаке и при его сбое логрегрессия
@@ -62,5 +64,6 @@ if __name__ == "__main__":  # самопроверка
     easy = {"name": "Стажёр, модератор данных", "exp": "noExperience", "formats": ["REMOTE"], "resp": 5}
     take = lambda v: sum(worth(v, {"score": 6}, w=w) == "model" for _ in range(400))
     assert take(dev) < 60 < 340 < take(easy), (take(dev), take(easy))
+    assert worth(easy, {"score": 6, "why": "выезды: 36 точек"}, w=w) is None
     assert chance(easy, w) is None and chance(easy, {**w, "auc": 0.7}) > 0.3
     print("ok")
