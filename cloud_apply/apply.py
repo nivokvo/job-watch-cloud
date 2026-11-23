@@ -11,12 +11,16 @@ click CHAT_ID "КНОПКА"             нажать кнопку бота ра
 raise                              поднять в поиске все резюме, у которых кнопка уже доступна
 Печатает одну строку JSON с результатом.
 """
-import json, os, sys, time
+import json, os, re, sys, time
 from patchright.sync_api import sync_playwright
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 PROFILE = os.path.join(DIR, "browser-profile")
 BASE = "https://rabota.by"
+
+
+# 23.11 БОФТ получил письмо с «[МОДЕЛЬ]» и «[ЧИСЛО]»: модель оставила дырки под факты, которых нет в резюме
+PLACEHOLDER = re.compile(r"\[[A-ZА-ЯЁ_ ]{3,}\]|\{[a-zа-яё_]+\}|<[A-ZА-ЯЁ_ ]{3,}>|XXX|ХХХ")
 
 
 def launch(pw, visible):
@@ -146,6 +150,8 @@ def apply(vid, resume, letter, dry=False, manual=False):
             box = page.locator('[data-qa="vacancy-response-popup-form-letter-input"]')
             if not letter or not letter.strip():
                 return out(ok=False, reason="no_letter_text")
+            if PLACEHOLDER.search(letter):
+                return out(ok=False, reason="letter_has_placeholder")
             if not box.count() or not box.first.is_visible():
                 return out(ok=False, reason="no_letter_field")
             box.first.click()
@@ -332,6 +338,8 @@ def say(chat_id, path, wait=True, key=None):
     idempotencyKey не даёт сайту принять дубль при повторе: replier передаёт один ключ на один ответ (20.11, с Reddit: свежий uuid на каждый повтор дубль не ловил)."""
     import uuid
     text = open(path).read().strip()
+    if PLACEHOLDER.search(text):
+        return out(ok=False, reason="text_has_placeholder")
     with sync_playwright() as pw:
         ctx = launch(pw, False)
         try:
