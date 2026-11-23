@@ -36,7 +36,7 @@ def worth(v, sc, model_today=0, w=None):
         return "opus"
     if s < MODEL_MIN or model_today >= MODEL_PER_DAY:
         return None
-    if re.search(r"выезд|разъезд", sc.get("why") or "", re.I):  # пробный отклик только на удалёнку: 20.11 ушёл на обход точек в Борисове
+    if re.search(r"(?<!без )(?<!нет )выезд|(?<!без )разъезд", sc.get("why") or "", re.I):  # пробный отклик только на удалёнку: 20.11 ушёл на обход точек в Борисове
         return None
     w = w or model.load()
     p = None
